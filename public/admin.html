@@ -20205,7 +20205,7 @@ function buildSingleMikrotikNetworkScript(eventData, router){
     "",
     "# LIBERAR O PORTAL ANTES DO LOGIN",
     '/ip hotspot walled-garden remove [find comment="WIFI-PAGO-PORTAL"]',
-    '/ip hotspot walled-garden add dst-host="https://wifi-pago-mikrotik-production-44d5.up.railway.app" action=allow comment="WIFI-PAGO-PORTAL"',
+    '/ip hotspot walled-garden add dst-host="wifi-pago-mikrotik-production-44d5.up.railway.app" action=allow comment="WIFI-PAGO-PORTAL"',
     ""
   );
 
