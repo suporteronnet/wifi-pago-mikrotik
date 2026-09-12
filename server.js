@@ -6265,20 +6265,6 @@ function findActivePaidAccess(
     nowIso();
 
 
-  // ==========================================================
-  // V16.1 - PROTEÇÃO CONTRA PIX DUPLICADO
-  //
-  // Um pagamento já confirmado pelo Mercado Pago pode ficar
-  // temporariamente em approved_pending_router enquanto aguarda
-  // a MikroTik aplicar o ALLOW e enviar o ACK.
-  //
-  // Esse estado JÁ REPRESENTA DINHEIRO RECEBIDO.
-  // Portanto ele também deve bloquear a criação de um novo PIX.
-  //
-  // Para status='approved', continua valendo a regra normal:
-  // o plano precisa possuir tempo restante.
-  // ==========================================================
-
   return db.prepare(`
 
     SELECT *
@@ -6288,25 +6274,13 @@ function findActivePaidAccess(
     WHERE
       event_id=?
       AND client_id=?
-      AND (
-        status='approved_pending_router'
-        OR (
-          status='approved'
-          AND access_expires_at IS NOT NULL
-          AND access_expired_at IS NULL
-          AND access_expires_at > ?
-        )
-      )
+      AND status='approved'
+      AND access_expires_at IS NOT NULL
+      AND access_expired_at IS NULL
+      AND access_expires_at > ?
 
     ORDER BY
-      CASE
-        WHEN status='approved_pending_router' THEN 0
-        ELSE 1
-      END,
-      COALESCE(
-        approved_at,
-        created_at
-      ) DESC,
+      access_expires_at DESC,
       id DESC
 
     LIMIT 1
@@ -6315,6 +6289,90 @@ function findActivePaidAccess(
     eventId,
     normalizedClientId,
     now
+  ) || null;
+
+}
+
+
+
+// ============================================================
+// V16.4 - RECUPERAR ACESSO PAGO POR TELEFONE + E-MAIL
+//
+// Usado quando o navegador cativo perdeu o client_id após uma
+// troca de MAC privado.
+//
+// Segurança:
+// - exige telefone E e-mail válidos;
+// - considera somente plano pago ainda ativo;
+// - restringe ao mesmo evento;
+// - não reinicia o relógio do plano.
+// ============================================================
+
+function findActivePaidAccessByContact(
+  eventId,
+  phone,
+  email
+) {
+
+  const normalizedPhone =
+    normalizeCustomerPhone(
+      phone
+    );
+
+  const normalizedEmail =
+    normalizeCustomerEmail(
+      email
+    );
+
+
+  if(
+    !normalizedPhone
+    ||
+    !normalizedEmail
+  ) {
+
+    return null;
+
+  }
+
+
+  const now =
+    nowIso();
+
+
+  return db.prepare(`
+
+    SELECT
+      o.*,
+      c.name AS recovery_customer_name,
+      c.phone AS recovery_customer_phone,
+      c.email AS recovery_customer_email
+
+    FROM orders o
+
+    JOIN customers c
+      ON c.client_id=o.client_id
+
+    WHERE
+      o.event_id=?
+      AND o.status='approved'
+      AND o.access_expires_at IS NOT NULL
+      AND o.access_expired_at IS NULL
+      AND o.access_expires_at > ?
+      AND c.phone=?
+      AND LOWER(c.email)=LOWER(?)
+
+    ORDER BY
+      o.access_expires_at DESC,
+      o.id DESC
+
+    LIMIT 1
+
+  `).get(
+    eventId,
+    now,
+    normalizedPhone,
+    normalizedEmail
   ) || null;
 
 }
@@ -7226,6 +7284,312 @@ app.post(
           error:
             "Erro ao verificar acesso ativo"
 
+        });
+
+    }
+
+  }
+);
+
+
+
+// ============================================================
+// V16.4 - RECUPERAR PLANO ATIVO APÓS TROCA DE MAC
+//
+// POST /api/access/recover
+//
+// Body:
+// {
+//   client_id,
+//   phone,
+//   email,
+//   mac,
+//   ip,
+//   event_key,
+//   router_key
+// }
+//
+// Se telefone + e-mail identificarem um plano ainda válido:
+// - migra o pedido ativo para o novo client_id;
+// - atualiza o grant para o novo client_id;
+// - envia o novo MAC/IP para ensureRouterGrant();
+// - o grant volta para pending se o MAC mudou;
+// - a MikroTik recebe ALLOW apenas com o tempo restante.
+// ============================================================
+
+app.post(
+  "/api/access/recover",
+  (req, res) => {
+
+    try {
+
+      const context =
+        resolvePortalContext(
+          req.body?.event_key,
+          req.body?.router_key
+        );
+
+
+      if(
+        !context.ok
+      ) {
+
+        return res
+          .status(400)
+          .json({
+            ok:false,
+            error:context.error
+          });
+
+      }
+
+
+      const normalizedClientId =
+        normalizeClientId(
+          req.body?.client_id
+        );
+
+      const normalizedPhone =
+        normalizeCustomerPhone(
+          req.body?.phone
+        );
+
+      const normalizedEmail =
+        normalizeCustomerEmail(
+          req.body?.email
+        );
+
+      const normalizedMac =
+        normalizeMac(
+          req.body?.mac
+        );
+
+      const normalizedIp =
+        normalizeIp(
+          req.body?.ip
+        );
+
+
+      if(
+        !normalizedClientId
+      ) {
+
+        return res
+          .status(400)
+          .json({
+            ok:false,
+            error:"Identificador do cliente inválido"
+          });
+
+      }
+
+
+      if(
+        !normalizedPhone
+      ) {
+
+        return res
+          .status(400)
+          .json({
+            ok:false,
+            error:"Informe um telefone válido com DDD"
+          });
+
+      }
+
+
+      if(
+        !normalizedEmail
+      ) {
+
+        return res
+          .status(400)
+          .json({
+            ok:false,
+            error:"Informe o mesmo e-mail usado no pagamento"
+          });
+
+      }
+
+
+      if(
+        !normalizedMac
+        ||
+        !normalizedIp
+      ) {
+
+        return res
+          .status(400)
+          .json({
+            ok:false,
+            error:"MAC ou IP atual inválido"
+          });
+
+      }
+
+
+      const activeOrder =
+        findActivePaidAccessByContact(
+          context.event.id,
+          normalizedPhone,
+          normalizedEmail
+        );
+
+
+      if(
+        !activeOrder
+      ) {
+
+        return res.json({
+          ok:true,
+          active:false,
+          recovered:false,
+          error:
+            "Nenhum plano ativo foi encontrado para este telefone e e-mail."
+        });
+
+      }
+
+
+      const oldClientId =
+        normalizeClientId(
+          activeOrder.client_id
+        );
+
+
+      const now =
+        nowIso();
+
+
+      const transaction =
+        db.transaction(
+          () => {
+
+            // Cria/atualiza o cadastro no NOVO client_id.
+            upsertCustomerProfile({
+              clientId:
+                normalizedClientId,
+              name:
+                activeOrder.recovery_customer_name
+                ||
+                "",
+              phone:
+                normalizedPhone,
+              email:
+                normalizedEmail
+            });
+
+
+            // O direito de acesso passa a acompanhar o novo client_id.
+            db.prepare(`
+
+              UPDATE orders
+
+              SET
+                client_id=?,
+                effective_mac=?,
+                ip=?,
+                portal_last_seen_at=?
+
+              WHERE id=?
+
+            `).run(
+              normalizedClientId,
+              normalizedMac,
+              normalizedIp,
+              now,
+              activeOrder.id
+            );
+
+
+            db.prepare(`
+
+              UPDATE router_access_grants
+
+              SET
+                client_id=?,
+                updated_at=?
+
+              WHERE order_id=?
+
+            `).run(
+              normalizedClientId,
+              now,
+              activeOrder.id
+            );
+
+          }
+        );
+
+
+      transaction();
+
+
+      const refreshedOrder =
+        db.prepare(`
+
+          SELECT *
+
+          FROM orders
+
+          WHERE id=?
+
+          LIMIT 1
+
+        `).get(
+          activeOrder.id
+        );
+
+
+      const grant =
+        ensureRouterGrant(
+          refreshedOrder,
+          context.router,
+          normalizedMac,
+          normalizedIp
+        );
+
+
+      console.log(
+        "ACESSO RECUPERADO:",
+        refreshedOrder.external_ref,
+        "CLIENT_ANTIGO=" +
+          String(oldClientId || ""),
+        "CLIENT_NOVO=" +
+          normalizedClientId,
+        "MAC_NOVO=" +
+          normalizedMac
+      );
+
+
+      return res.json({
+        ok:true,
+        recovered:true,
+        previous_client_id:
+          oldClientId || null,
+        ...buildActiveAccessResponse(
+          refreshedOrder,
+          context.router,
+          grant
+        )
+      });
+
+    }
+
+
+    catch(error) {
+
+      console.error(
+        "Erro ao recuperar acesso ativo:",
+        error
+      );
+
+
+      return res
+        .status(500)
+        .json({
+          ok:false,
+          error:"Erro ao recuperar o acesso"
         });
 
     }
