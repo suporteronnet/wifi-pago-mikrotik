@@ -19540,6 +19540,23 @@ function buildMikrotikPullScript(
 // /api/mikrotik/admin-ack
 // ============================================================
 
+// ============================================================
+// GERADOR - WIFI-PAGO-ADMIN-PULL
+//
+// Processa as liberações administrativas:
+//
+// BYPASS
+// TEMP_ADMIN
+// UNBYPASS
+// BLOCK_NOW
+//
+// Backend:
+// /api/mikrotik/admin-pending
+// /api/mikrotik/admin-ack?ref=...
+//
+// COMPATIVEL COM ROUTEROS 6.49.x
+// ============================================================
+
 function buildMikrotikAdminPullScript(
   eventData,
   router
@@ -19584,93 +19601,371 @@ function buildMikrotikAdminPullScript(
   const source = [
 
     ':local baseUrl "https://wifi-pago-mikrotik-production-44d5.up.railway.app";',
+
     `:local routerKey "${routerKey}";`,
+
     `:local token "${token}";`,
+
     ':local headers ("x-router-key: " . $routerKey . ",x-mikrotik-token: " . $token);',
+
     '',
+
     ':do {',
+
+    '',
+
     '  :local result [/tool fetch url=($baseUrl . "/api/mikrotik/admin-pending") mode=https http-header-field=$headers output=user as-value];',
+
     '  :local data ($result->"data");',
+
     '',
-    '  :if (($data!="") && ($data!="NONE")) do={',
+
+    '  :if (($data != "") && ($data != "NONE")) do={',
+
     '',
+
     '    :local p1 [:find $data "|"];',
+
     '    :local p2 [:find $data "|" ($p1 + 1)];',
+
     '    :local p3 [:find $data "|" ($p2 + 1)];',
+
     '',
-    '    :if (([:typeof $p1]!="nil") && ([:typeof $p2]!="nil") && ([:typeof $p3]!="nil")) do={',
+
+    '    :if (([:typeof $p1] != "nil") && ([:typeof $p2] != "nil") && ([:typeof $p3] != "nil")) do={',
+
     '',
+
     '      :local command [:pick $data 0 $p1];',
+
     '      :local mac [:pick $data ($p1 + 1) $p2];',
+
     '      :local name [:pick $data ($p2 + 1) $p3];',
+
+    '',
+
     '      :local minutes 0;',
+
     '      :local ref "";',
+
     '',
-    '      :if ($command="TEMP_ADMIN") do={',
+
+    '      # ====================================================',
+
+    '      # REF = SEMPRE O ULTIMO CAMPO DA RESPOSTA',
+
+    '      # ====================================================',
+
+    '',
+
+    '      :local lastSep $p3;',
+
+    '      :local searchFrom ($p3 + 1);',
+
+    '      :local nextSep [:find $data "|" $searchFrom];',
+
+    '',
+
+    '      :while ([:typeof $nextSep] != "nil") do={',
+
+    '',
+
+    '        :set lastSep $nextSep;',
+
+    '        :set searchFrom ($nextSep + 1);',
+
+    '        :set nextSep [:find $data "|" $searchFrom];',
+
+    '',
+
+    '      };',
+
+    '',
+
+    '      :set ref [:pick $data ($lastSep + 1) [:len $data]];',
+
+    '',
+
+    '      # ====================================================',
+
+    '      # TEMP_ADMIN',
+
+    '      # PRIMEIRO CAMPO APOS NOME = MINUTOS',
+
+    '      # ====================================================',
+
+    '',
+
+    '      :if ($command = "TEMP_ADMIN") do={',
+
+    '',
+
     '        :local p4 [:find $data "|" ($p3 + 1)];',
-    '        :if ([:typeof $p4]!="nil") do={',
+
+    '',
+
+    '        :if ([:typeof $p4] != "nil") do={',
+
+    '',
+
     '          :set minutes [:tonum [:pick $data ($p3 + 1) $p4]];',
-    '          :set ref [:pick $data ($p4 + 1) [:len $data]];',
-    '        };',
-    '      } else={',
-    '        :set ref [:pick $data ($p3 + 1) [:len $data]];',
-    '      };',
+
     '',
+
+    '        };',
+
+    '',
+
+    '      };',
+
+    '',
+
     '      :local comment ("WIFI-PAGO-ADMIN-" . $ref);',
+
     '      :local applied false;',
+
     '',
-    '      :if ($command="BYPASS") do={',
-    '        :foreach a in=[/ip hotspot active find mac-address=$mac] do={ /ip hotspot active remove $a; };',
-    '        :foreach b in=[/ip hotspot ip-binding find mac-address=$mac] do={',
-    '          :local c [/ip hotspot ip-binding get $b comment];',
-    '          :if ([:find $c "WIFI-PAGO-ADMIN-"] = 0) do={ /ip hotspot ip-binding remove $b; };',
+
+    '      # ====================================================',
+
+    '      # BYPASS',
+
+    '      # ====================================================',
+
+    '',
+
+    '      :if ($command = "BYPASS") do={',
+
+    '',
+
+    '        :foreach a in=[/ip hotspot active find mac-address=$mac] do={',
+
+    '          /ip hotspot active remove $a;',
+
     '        };',
-    '        /ip hotspot ip-binding add mac-address=$mac type=bypassed comment=$comment;',
-    '        :set applied true;',
-    '      };',
+
     '',
-    '      :if ($command="TEMP_ADMIN") do={',
-    '        :if ($minutes>0) do={',
-    '          :foreach a in=[/ip hotspot active find mac-address=$mac] do={ /ip hotspot active remove $a; };',
-    '          :foreach b in=[/ip hotspot ip-binding find mac-address=$mac] do={',
-    '            :local c [/ip hotspot ip-binding get $b comment];',
-    '            :if ([:find $c "WIFI-PAGO-ADMIN-"] = 0) do={ /ip hotspot ip-binding remove $b; };',
+
+    '        :foreach b in=[/ip hotspot ip-binding find mac-address=$mac] do={',
+
+    '          :local c [/ip hotspot ip-binding get $b comment];',
+
+    '',
+
+    '          :if ([:find $c "WIFI-PAGO-ADMIN-"] = 0) do={',
+
+    '            /ip hotspot ip-binding remove $b;',
+
     '          };',
-    '          /ip hotspot ip-binding add mac-address=$mac type=bypassed comment=$comment;',
-    '          :set applied true;',
-    '        };',
-    '      };',
+
     '',
-    '      :if (($command="UNBYPASS") || ($command="BLOCK_NOW")) do={',
-    '        :foreach a in=[/ip hotspot active find mac-address=$mac] do={ /ip hotspot active remove $a; };',
-    '        :foreach b in=[/ip hotspot ip-binding find mac-address=$mac] do={',
-    '          :local c [/ip hotspot ip-binding get $b comment];',
-    '          :if ([:find $c "WIFI-PAGO-ADMIN-"] = 0) do={ /ip hotspot ip-binding remove $b; };',
+
     '        };',
-    '        :if ($command="BLOCK_NOW") do={',
-    '          :foreach u in=[/ip hotspot user find name=$mac] do={ /ip hotspot user remove $u; };',
-    '        };',
+
+    '',
+
+    '        /ip hotspot ip-binding add mac-address=$mac type=bypassed comment=$comment;',
+
+    '',
+
     '        :set applied true;',
-    '      };',
+
     '',
-    '      :if ($applied=true) do={',
-    '        :local ackHeaders ($headers . ",x-command-ref: " . $ref);',
-    '        :do {',
-    '          /tool fetch url=($baseUrl . "/api/mikrotik/admin-ack") mode=https http-header-field=$ackHeaders keep-result=no;',
-    '          :log info ("WIFI-PAGO-ADMIN " . $command . " aplicado " . $mac . " REF=" . $ref);',
-    '        } on-error={',
-    '          :log warning ("WIFI-PAGO-ADMIN falha ACK " . $ref);',
+
+    '      };',
+
+    '',
+
+    '      # ====================================================',
+
+    '      # TEMP_ADMIN',
+
+    '      # ====================================================',
+
+    '',
+
+    '      :if ($command = "TEMP_ADMIN") do={',
+
+    '',
+
+    '        :if ($minutes > 0) do={',
+
+    '',
+
+    '          :foreach a in=[/ip hotspot active find mac-address=$mac] do={',
+
+    '            /ip hotspot active remove $a;',
+
+    '          };',
+
+    '',
+
+    '          :foreach b in=[/ip hotspot ip-binding find mac-address=$mac] do={',
+
+    '            :local c [/ip hotspot ip-binding get $b comment];',
+
+    '',
+
+    '            :if ([:find $c "WIFI-PAGO-ADMIN-"] = 0) do={',
+
+    '              /ip hotspot ip-binding remove $b;',
+
+    '            };',
+
+    '',
+
+    '          };',
+
+    '',
+
+    '          /ip hotspot ip-binding add mac-address=$mac type=bypassed comment=$comment;',
+
+    '',
+
+    '          :set applied true;',
+
+    '',
+
     '        };',
+
+    '',
+
     '      };',
+
     '',
+
+    '      # ====================================================',
+
+    '      # UNBYPASS / BLOCK_NOW',
+
+    '      # ====================================================',
+
+    '',
+
+    '      :if (($command = "UNBYPASS") || ($command = "BLOCK_NOW")) do={',
+
+    '',
+
+    '        :foreach a in=[/ip hotspot active find mac-address=$mac] do={',
+
+    '          /ip hotspot active remove $a;',
+
+    '        };',
+
+    '',
+
+    '        :foreach b in=[/ip hotspot ip-binding find mac-address=$mac] do={',
+
+    '          :local c [/ip hotspot ip-binding get $b comment];',
+
+    '',
+
+    '          :if ([:find $c "WIFI-PAGO-ADMIN-"] = 0) do={',
+
+    '            /ip hotspot ip-binding remove $b;',
+
+    '          };',
+
+    '',
+
+    '        };',
+
+    '',
+
+    '        :if ($command = "BLOCK_NOW") do={',
+
+    '',
+
+    '          :foreach u in=[/ip hotspot user find name=$mac] do={',
+
+    '            /ip hotspot user remove $u;',
+
+    '          };',
+
+    '',
+
+    '        };',
+
+    '',
+
+    '        :set applied true;',
+
+    '',
+
+    '      };',
+
+    '',
+
+    '      # ====================================================',
+
+    '      # ACK',
+
+    '      # REF VAI NA QUERY STRING',
+
+    '      # ====================================================',
+
+    '',
+
+    '      :if ($applied = true) do={',
+
+    '',
+
+    '        :local ackUrl ($baseUrl . "/api/mikrotik/admin-ack?ref=" . $ref);',
+
+    '',
+
+    '        :do {',
+
+    '',
+
+    '          /tool fetch url=$ackUrl mode=https http-header-field=$headers keep-result=no;',
+
+    '',
+
+    '          :log info ("WIFI-PAGO-ADMIN " . $command . " aplicado " . $mac . " REF=" . $ref);',
+
+    '',
+
+    '        } on-error={',
+
+    '',
+
+    '          :log warning ("WIFI-PAGO-ADMIN falha ACK " . $ref);',
+
+    '',
+
+    '        };',
+
+    '',
+
+    '      };',
+
+    '',
+
     '    } else={',
+
+    '',
+
     '      :log warning ("WIFI-PAGO-ADMIN resposta invalida: " . $data);',
+
+    '',
+
     '    };',
+
     '',
+
     '  };',
+
     '',
+
     '} on-error={',
+
+    '',
+
     '  :log warning "WIFI-PAGO-ADMIN-PULL erro de comunicacao";',
+
+    '',
+
     '};'
 
   ].join(
@@ -19681,24 +19976,45 @@ function buildMikrotikAdminPullScript(
   return [
 
     "",
+
     "# ============================================================",
+
     "# WIFI-PAGO-ADMIN-PULL - COMANDOS ADMINISTRATIVOS",
+
     `# ROUTER_KEY: ${routerKey}`,
+
     "# BYPASS / TEMP_ADMIN / UNBYPASS / BLOCK_NOW",
+
+    "# COMPATIVEL COM ROUTEROS 6.49.x",
+
     "# ============================================================",
+
     "",
+
     '/system scheduler remove [find name="WIFI-PAGO-ADMIN-PULL"]',
+
     '/system script remove [find name="WIFI-PAGO-ADMIN-PULL"]',
+
     "",
+
     '/system script add name="WIFI-PAGO-ADMIN-PULL" policy=read,write,test source={',
+
     source,
+
     '}',
+
     "",
+
     '/system scheduler add name="WIFI-PAGO-ADMIN-PULL" interval=5s start-time=startup on-event="/system script run WIFI-PAGO-ADMIN-PULL" policy=read,write,test',
+
     "",
+
     "# TESTE MANUAL:",
+
     '# /system script run WIFI-PAGO-ADMIN-PULL',
+
     '# /log print where message~"WIFI-PAGO-ADMIN"',
+
     ""
 
   ].join(
