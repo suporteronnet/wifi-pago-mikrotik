@@ -1752,43 +1752,164 @@ function createClientId(){
 
 }
 
+// ============================================================
+// V16.2 - CLIENT_ID PERSISTENTE EM LOCALSTORAGE + COOKIE
+//
+// O mesmo cliente pode voltar com outro MAC privado.
+// Guardamos a identidade em dois lugares:
+// - localStorage
+// - cookie persistente do domínio do portal
+//
+// Se um deles sobreviver à troca de MAC, o outro é restaurado.
+// ============================================================
+
+function getCookieValue(name){
+
+  try{
+
+    const prefix =
+      encodeURIComponent(name) + "=";
+
+    const parts =
+      String(document.cookie || "")
+        .split(";");
+
+    for(const rawPart of parts){
+
+      const part =
+        rawPart.trim();
+
+      if(part.startsWith(prefix)){
+
+        return decodeURIComponent(
+          part.slice(prefix.length)
+        );
+
+      }
+
+    }
+
+  }
+  catch(error){
+  }
+
+  return "";
+
+}
+
+
+function saveClientIdCookie(value){
+
+  try{
+
+    const secure =
+      window.location.protocol === "https:"
+        ? "; Secure"
+        : "";
+
+    document.cookie =
+      "wifi_pago_client_id=" +
+      encodeURIComponent(value) +
+      "; Max-Age=2592000" +
+      "; Path=/" +
+      "; SameSite=Lax" +
+      secure;
+
+  }
+  catch(error){
+  }
+
+}
+
+
 function getClientId(){
 
   const key =
     "wifi_pago_client_id";
 
+  let localValue =
+    "";
+
+  let cookieValue =
+    "";
+
+
   try{
 
-    let value =
-      localStorage.getItem(
-        key
-      );
+    localValue =
+      String(
+        localStorage.getItem(key) || ""
+      ).trim();
 
-    if(
-      !value
-    ){
+  }
+  catch(error){
+  }
 
-      value =
-        createClientId();
 
-      localStorage.setItem(
-        key,
-        value
+  cookieValue =
+    String(
+      getCookieValue(key) || ""
+    ).trim();
+
+
+  if(localValue){
+
+    if(cookieValue !== localValue){
+
+      saveClientIdCookie(
+        localValue
       );
 
     }
 
-    return value;
+    return localValue;
 
   }
 
+
+  if(cookieValue){
+
+    try{
+
+      localStorage.setItem(
+        key,
+        cookieValue
+      );
+
+    }
+    catch(error){
+    }
+
+    return cookieValue;
+
+  }
+
+
+  const newValue =
+    createClientId();
+
+
+  try{
+
+    localStorage.setItem(
+      key,
+      newValue
+    );
+
+  }
   catch(error){
-
-    return createClientId();
-
   }
+
+
+  saveClientIdCookie(
+    newValue
+  );
+
+
+  return newValue;
 
 }
+
 
 const clientId =
   getClientId();
