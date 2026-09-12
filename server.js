@@ -6265,6 +6265,20 @@ function findActivePaidAccess(
     nowIso();
 
 
+  // ==========================================================
+  // V16.1 - PROTEÇÃO CONTRA PIX DUPLICADO
+  //
+  // Um pagamento já confirmado pelo Mercado Pago pode ficar
+  // temporariamente em approved_pending_router enquanto aguarda
+  // a MikroTik aplicar o ALLOW e enviar o ACK.
+  //
+  // Esse estado JÁ REPRESENTA DINHEIRO RECEBIDO.
+  // Portanto ele também deve bloquear a criação de um novo PIX.
+  //
+  // Para status='approved', continua valendo a regra normal:
+  // o plano precisa possuir tempo restante.
+  // ==========================================================
+
   return db.prepare(`
 
     SELECT *
@@ -6274,13 +6288,25 @@ function findActivePaidAccess(
     WHERE
       event_id=?
       AND client_id=?
-      AND status='approved'
-      AND access_expires_at IS NOT NULL
-      AND access_expired_at IS NULL
-      AND access_expires_at > ?
+      AND (
+        status='approved_pending_router'
+        OR (
+          status='approved'
+          AND access_expires_at IS NOT NULL
+          AND access_expired_at IS NULL
+          AND access_expires_at > ?
+        )
+      )
 
     ORDER BY
-      access_expires_at DESC,
+      CASE
+        WHEN status='approved_pending_router' THEN 0
+        ELSE 1
+      END,
+      COALESCE(
+        approved_at,
+        created_at
+      ) DESC,
       id DESC
 
     LIMIT 1
