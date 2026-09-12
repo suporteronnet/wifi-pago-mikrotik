@@ -19116,7 +19116,7 @@ function buildMikrotikPullScript(
 
   const source = [
 
-    ':local baseUrl "https://wifi-pago-mikrotik-production-44d5.up.railway.app";',
+    ':local baseUrl "https://wifi-pago-mikrotik-production-44d5.up.railway.ap";',
     `:local routerKey "${routerKey}";`,
     `:local token "${token}";`,
     ':local headers ("x-router-key: " . $routerKey . ",x-mikrotik-token: " . $token);',
@@ -19192,6 +19192,18 @@ function buildMikrotikPullScript(
     '',
     '          :if ($validProfile=true) do={',
     '',
+    '# V16.2 - ROAMING SEGURO: somente um MAC por pedido/plano.',
+    '            # Remove qualquer sessao/usuario anterior da mesma REF.',
+    '            :local paidComment ("WIFI-PAGO-" . $ref);',
+    '            :foreach previousUserId in=[/ip hotspot user find comment=$paidComment] do={',
+    '              :local previousUserName [/ip hotspot user get $previousUserId name];',
+    '              :foreach previousActiveId in=[/ip hotspot active find user=$previousUserName] do={',
+    '                /ip hotspot active remove $previousActiveId;',
+    '              };',
+    '              /ip hotspot user remove $previousUserId;',
+    '            };',
+    '',
+    '            # Limpa tambem qualquer sessao/usuario residual do MAC novo.',
     '            :foreach activeId in=[/ip hotspot active find mac-address=$mac] do={',
     '              /ip hotspot active remove $activeId;',
     '            };',
@@ -19200,7 +19212,7 @@ function buildMikrotikPullScript(
     '              /ip hotspot user remove $oldUser;',
     '            };',
     '',
-    '            /ip hotspot user add name=$mac password=$mac profile=$profile limit-uptime=($minutes . "m") comment=("WIFI-PAGO-" . $ref);',
+    '            /ip hotspot user add name=$mac password=$mac profile=$profile limit-uptime=($minutes . "m") comment=$paidComment;',
     '',
     '            # Forca o HotSpot a reavaliar o cliente e autenticar por MAC',
     '            :foreach hostId in=[/ip hotspot host find mac-address=$mac] do={',
@@ -20164,13 +20176,6 @@ function buildSingleMikrotikNetworkScript(eventData, router){
     '/ip firewall nat remove [find comment="WIFI-PAGO-NAT"]',
     `/ip firewall nat add chain=srcnat src-address=${clientNetwork} action=masquerade comment="WIFI-PAGO-NAT"`,
     "",
-
-    "# ACESSO REMOTO WINBOX",
-    '/ip service set winbox port=65500 disabled=no',
-    '/ip firewall filter remove [find comment="WIFI-PAGO-WINBOX-REMOTO"]',
-    '/ip firewall filter add chain=input action=accept connection-state=new protocol=tcp in-interface=!all-ethernet dst-port=65500 comment="WIFI-PAGO-WINBOX-REMOTO"',
-    "",
-
     "# PROTECAO BASICA DAS WANS",
     '/ip firewall filter remove [find comment="WIFI-PAGO-PROTECAO-WAN1"]',
     ...(failoverEnabled
