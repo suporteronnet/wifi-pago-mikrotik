@@ -1933,6 +1933,99 @@ let currentPixData =
 
 
 // ============================================================
+// V16.3 - DIAGNÓSTICO TEMPORÁRIO DE ROAMING / CLIENT_ID
+//
+// Ative acrescentando:
+//   &debug_client=1
+// na URL do portal.
+//
+// Não altera pagamento, cortesia ou liberação.
+// Apenas mostra:
+// - client_id
+// - MAC/IP atuais
+// - evento/router
+// - resposta de /api/access/check
+// ============================================================
+
+const debugClient =
+  qs.get("debug_client") === "1";
+
+let debugAccessCheckData =
+  null;
+
+
+function renderClientDebug(){
+
+  if(
+    !debugClient
+  ){
+    return;
+  }
+
+
+  let box =
+    document.getElementById(
+      "wifiPagoClientDebug"
+    );
+
+
+  if(
+    !box
+  ){
+
+    box =
+      document.createElement(
+        "div"
+      );
+
+    box.id =
+      "wifiPagoClientDebug";
+
+    box.style.cssText =
+      "position:fixed;left:8px;right:8px;bottom:8px;z-index:99999;" +
+      "max-height:46vh;overflow:auto;padding:12px;border-radius:12px;" +
+      "background:#020617ee;color:#e2e8f0;border:1px solid #475569;" +
+      "font:12px/1.45 Consolas,monospace;white-space:pre-wrap;" +
+      "box-shadow:0 10px 30px rgba(0,0,0,.45)";
+
+    document.body.appendChild(
+      box
+    );
+
+  }
+
+
+  const payload = {
+    client_id:
+      clientId || "",
+    mac:
+      mac || "",
+    ip:
+      ip || "",
+    event_key:
+      eventKey || "",
+    router_key:
+      currentRouterKey || routerKey || "",
+    current_order:
+      currentOrder || "",
+    access_check:
+      debugAccessCheckData
+  };
+
+
+  box.textContent =
+    "=== WIFI-PAGO DEBUG V16.3 ===\n" +
+    JSON.stringify(
+      payload,
+      null,
+      2
+    );
+
+}
+
+
+
+// ============================================================
 // V15 - FUNIL DE CONVERSAO DO PORTAL
 //
 // O navegador informa somente as etapas que realmente acontecem
@@ -2982,6 +3075,18 @@ async function checkExistingAccess(){
 
     const data =
       await response.json();
+
+    debugAccessCheckData = {
+      http_status:
+        response.status,
+      ok:
+        response.ok,
+      body:
+        data
+    };
+
+    renderClientDebug();
+
 
 
     if(
@@ -5948,6 +6053,8 @@ async function startPortal(){
 
 }
 
+
+renderClientDebug();
 
 startPortal();
 
