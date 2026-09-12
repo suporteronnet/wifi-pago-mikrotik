@@ -1489,52 +1489,6 @@ code{
 
   </section>
 
-  <div
-    id="recoverAccessPanel"
-    style="
-      margin:16px 0 20px;
-      padding:16px;
-      border:1px solid #334155;
-      border-radius:16px;
-      background:#0b1728;
-      text-align:center;
-    "
-  >
-    <div style="font-weight:800;font-size:16px;margin-bottom:6px;">
-      Já pagou e trocou o MAC?
-    </div>
-
-    <div
-      class="muted"
-      style="margin-bottom:12px;"
-    >
-      Informe o mesmo telefone e e-mail usados no pagamento
-      para recuperar o tempo restante do seu plano.
-    </div>
-
-    <button
-      type="button"
-      id="recoverAccessButton"
-      onclick="recoverExistingAccess()"
-      style="
-        width:100%;
-        min-height:46px;
-        border:0;
-        border-radius:12px;
-        font-weight:800;
-        cursor:pointer;
-      "
-    >
-      RECUPERAR MEU ACESSO
-    </button>
-
-    <div
-      id="recoverAccessStatus"
-      class="muted"
-      style="margin-top:10px;"
-    ></div>
-  </div>
-
   <div class="section-title">
     Escolha seu plano
   </div>
@@ -1753,6 +1707,30 @@ const routerKey =
 
 
 // ============================================================
+// V16.6 - IDENTIDADE PRINCIPAL VINDO DO DOMÍNIO LOCAL wifi.pago
+//
+// O login.html da MikroTik cria e mantém um DEVICE_ID persistente.
+// Esse DEVICE_ID passa a ser usado como client_id do backend.
+// Assim, se o celular trocar o MAC, o plano continua ligado ao
+// mesmo aparelho e o backend pode reaplicar o acesso automaticamente.
+// ============================================================
+
+const hotspotDeviceId =
+  String(
+    qs.get("device_id") || ""
+  )
+    .trim()
+    .replace(
+      /[^a-zA-Z0-9_-]/g,
+      ""
+    )
+    .slice(
+      0,
+      100
+    );
+
+
+// ============================================================
 // CLIENT_ID PERSISTENTE
 // ============================================================
 
@@ -1873,6 +1851,48 @@ function getClientId(){
   const key =
     "wifi_pago_client_id";
 
+
+  // ==========================================================
+  // PRIORIDADE 1:
+  // DEVICE_ID persistente criado no domínio local wifi.pago.
+  //
+  // Esse é o identificador que deve sobreviver à troca de MAC.
+  // ==========================================================
+
+  if(
+    hotspotDeviceId
+    &&
+    hotspotDeviceId.length >= 10
+  ){
+
+    try{
+
+      localStorage.setItem(
+        key,
+        hotspotDeviceId
+      );
+
+    }
+    catch(error){
+    }
+
+
+    saveClientIdCookie(
+      hotspotDeviceId
+    );
+
+
+    return hotspotDeviceId;
+
+  }
+
+
+  // ==========================================================
+  // COMPATIBILIDADE:
+  // Se o portal for aberto sem device_id, ainda tentamos
+  // recuperar a identidade antiga salva no Railway.
+  // ==========================================================
+
   let localValue =
     "";
 
@@ -1976,99 +1996,6 @@ let currentRouterKey =
 
 let currentPixData =
   null;
-
-
-// ============================================================
-// V16.3 - DIAGNÓSTICO TEMPORÁRIO DE ROAMING / CLIENT_ID
-//
-// Ative acrescentando:
-//   &debug_client=1
-// na URL do portal.
-//
-// Não altera pagamento, cortesia ou liberação.
-// Apenas mostra:
-// - client_id
-// - MAC/IP atuais
-// - evento/router
-// - resposta de /api/access/check
-// ============================================================
-
-const debugClient =
-  qs.get("debug_client") === "1";
-
-let debugAccessCheckData =
-  null;
-
-
-function renderClientDebug(){
-
-  if(
-    !debugClient
-  ){
-    return;
-  }
-
-
-  let box =
-    document.getElementById(
-      "wifiPagoClientDebug"
-    );
-
-
-  if(
-    !box
-  ){
-
-    box =
-      document.createElement(
-        "div"
-      );
-
-    box.id =
-      "wifiPagoClientDebug";
-
-    box.style.cssText =
-      "position:fixed;left:8px;right:8px;bottom:8px;z-index:99999;" +
-      "max-height:46vh;overflow:auto;padding:12px;border-radius:12px;" +
-      "background:#020617ee;color:#e2e8f0;border:1px solid #475569;" +
-      "font:12px/1.45 Consolas,monospace;white-space:pre-wrap;" +
-      "box-shadow:0 10px 30px rgba(0,0,0,.45)";
-
-    document.body.appendChild(
-      box
-    );
-
-  }
-
-
-  const payload = {
-    client_id:
-      clientId || "",
-    mac:
-      mac || "",
-    ip:
-      ip || "",
-    event_key:
-      eventKey || "",
-    router_key:
-      currentRouterKey || routerKey || "",
-    current_order:
-      currentOrder || "",
-    access_check:
-      debugAccessCheckData
-  };
-
-
-  box.textContent =
-    "=== WIFI-PAGO DEBUG V16.3 ===\n" +
-    JSON.stringify(
-      payload,
-      null,
-      2
-    );
-
-}
-
 
 
 // ============================================================
@@ -3078,302 +3005,6 @@ function showExistingAccess(
 
 
 // ============================================================
-// V16.4 - RECUPERAR ACESSO POR TELEFONE + E-MAIL
-//
-// Usado quando o captive portal perdeu o client_id após troca
-// do MAC privado.
-//
-// Não cria PIX.
-// Não reinicia o plano.
-// O backend reaproveita apenas o tempo restante.
-// ============================================================
-
-let recoverAccessInProgress =
-  false;
-
-
-async function recoverExistingAccess(){
-
-  if(
-    recoverAccessInProgress
-  ){
-    return;
-  }
-
-
-  const phoneElement =
-    document.getElementById(
-      "customerPhone"
-    );
-
-  const emailElement =
-    document.getElementById(
-      "email"
-    );
-
-  const button =
-    document.getElementById(
-      "recoverAccessButton"
-    );
-
-  const statusElement =
-    document.getElementById(
-      "recoverAccessStatus"
-    );
-
-
-  const phone =
-    String(
-      phoneElement?.value || ""
-    ).trim();
-
-  const emailValue =
-    String(
-      emailElement?.value || ""
-    ).trim();
-
-
-  if(
-    !phone
-  ){
-
-    alert(
-      "Informe o mesmo telefone usado no pagamento."
-    );
-
-    phoneElement?.focus();
-
-    return;
-
-  }
-
-
-  if(
-    !emailValue
-  ){
-
-    alert(
-      "Informe o mesmo e-mail usado no pagamento."
-    );
-
-    emailElement?.focus();
-
-    return;
-
-  }
-
-
-  recoverAccessInProgress =
-    true;
-
-
-  if(
-    button
-  ){
-
-    button.disabled =
-      true;
-
-    button.textContent =
-      "PROCURANDO PLANO...";
-
-  }
-
-
-  if(
-    statusElement
-  ){
-
-    statusElement.textContent =
-      "Verificando seu pagamento ativo...";
-
-  }
-
-
-  try{
-
-    const response =
-      await fetch(
-        "/api/access/recover",
-        {
-          method:
-            "POST",
-
-          cache:
-            "no-store",
-
-          headers:{
-            "Content-Type":
-              "application/json"
-          },
-
-          body:
-            JSON.stringify({
-
-              client_id:
-                clientId,
-
-              phone,
-
-              email:
-                emailValue,
-
-              mac,
-
-              ip,
-
-              event_key:
-                eventKey,
-
-              router_key:
-                routerKey
-
-            })
-
-        }
-      );
-
-
-    const data =
-      await response.json();
-
-
-    if(
-      !response.ok
-      ||
-      !data.ok
-    ){
-
-      throw new Error(
-        data.error
-        ||
-        "Não foi possível recuperar o acesso."
-      );
-
-    }
-
-
-    if(
-      !data.active
-      ||
-      !data.recovered
-    ){
-
-      if(
-        statusElement
-      ){
-
-        statusElement.textContent =
-          data.error
-          ||
-          "Nenhum plano ativo foi encontrado para estes dados.";
-
-      }
-
-      return;
-
-    }
-
-
-    currentOrder =
-      data.order;
-
-
-    if(
-      data.router_id
-    ){
-
-      currentRouterId =
-        Number(
-          data.router_id
-        );
-
-    }
-
-
-    if(
-      data.router_key
-    ){
-
-      currentRouterKey =
-        data.router_key;
-
-    }
-
-
-    showExistingAccess(
-      data
-    );
-
-
-    if(
-      data.grant_status !==
-      "active"
-    ){
-
-      poll();
-
-    }
-
-
-    if(
-      statusElement
-    ){
-
-      statusElement.textContent =
-        "Plano recuperado. Liberando este MAC com o tempo restante...";
-
-    }
-
-  }
-
-
-  catch(error){
-
-    console.error(
-      "Erro ao recuperar acesso:",
-      error
-    );
-
-
-    if(
-      statusElement
-    ){
-
-      statusElement.textContent =
-        error.message
-        ||
-        "Erro ao recuperar o acesso.";
-
-    }
-
-  }
-
-
-  finally{
-
-    recoverAccessInProgress =
-      false;
-
-
-    if(
-      button
-    ){
-
-      button.disabled =
-        false;
-
-      button.textContent =
-        "RECUPERAR MEU ACESSO";
-
-    }
-
-  }
-
-}
-
-
-// ============================================================
 // VERIFICAR SE O CLIENTE JÁ TEM PLANO ATIVO
 // NO MESMO EVENTO ANTES DE MOSTRAR NOVA COBRANÇA
 // ============================================================
@@ -3417,21 +3048,7 @@ async function checkExistingAccess(){
 
     const data =
       await response.json();
-
-    debugAccessCheckData = {
-      http_status:
-        response.status,
-      ok:
-        response.ok,
-      body:
-        data
-    };
-
-    renderClientDebug();
-
-
-
-    if(
+if(
       !response.ok
       ||
       !data.ok
@@ -6395,8 +6012,6 @@ async function startPortal(){
 
 }
 
-
-renderClientDebug();
 
 startPortal();
 
