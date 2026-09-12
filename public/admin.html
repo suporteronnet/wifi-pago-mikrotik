@@ -19421,7 +19421,7 @@ function buildMikrotikPullScript(
   );
 
   lines.push(
-  `/ip hotspot profile set [find name="hsprof-wifi-pago"] login-by=mac,cookie,http-chap,http-pap`
+  `/ip hotspot profile set [find name="hsprof-wifi-pago"] login-by=mac,cookie,http-chap,http-pap mac-auth-mode=mac-as-username-and-password`
 );
 
   lines.push(
