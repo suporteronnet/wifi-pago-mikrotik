@@ -5673,6 +5673,263 @@ if (
 // FIM DO BLOCO 4/10
 
 // BLOCO 5/10 - CRIAR PIX E CONSULTAR PEDIDO
+// ============================================================
+// V16.11 - COOKIE DE RECUPERACAO ASSINADO PELO BACKEND
+//
+// Objetivo:
+// - manter uma segunda identidade persistente alem do client_id JS;
+// - o cookie e HttpOnly, portanto nao depende de localStorage;
+// - o valor e assinado por HMAC e nao pode ser forjado pelo cliente;
+// - serve APENAS para recuperar uma compra ainda valida no mesmo evento;
+// - nunca cria tempo novo e nunca libera outro evento.
+//
+// RECOVERY_COOKIE_SECRET e recomendado. Se nao existir, usamos
+// ADMIN_PASSWORD como fallback persistente para nao quebrar o deploy atual.
+// ============================================================
+
+const RECOVERY_COOKIE_NAME =
+  "wifi_pago_recovery";
+
+const RECOVERY_COOKIE_MAX_AGE_SECONDS =
+  60 * 60 * 24 * 30;
+
+const RECOVERY_COOKIE_SECRET =
+  String(
+    process.env.RECOVERY_COOKIE_SECRET
+    || process.env.ADMIN_PASSWORD
+    || ""
+  ).trim();
+
+
+function parseCookieHeader(req) {
+
+  const result = {};
+
+  const raw =
+    String(
+      req?.headers?.cookie || ""
+    );
+
+  for(const part of raw.split(";")) {
+
+    const index = part.indexOf("=");
+
+    if(index <= 0) {
+      continue;
+    }
+
+    const key =
+      part.slice(0,index).trim();
+
+    const value =
+      part.slice(index + 1).trim();
+
+    if(!key) {
+      continue;
+    }
+
+    try {
+      result[key] = decodeURIComponent(value);
+    }
+    catch(error) {
+      result[key] = value;
+    }
+
+  }
+
+  return result;
+
+}
+
+
+function signRecoveryPayload(payload) {
+
+  if(!RECOVERY_COOKIE_SECRET) {
+    return "";
+  }
+
+  return crypto
+    .createHmac(
+      "sha256",
+      RECOVERY_COOKIE_SECRET
+    )
+    .update(payload)
+    .digest("base64url");
+
+}
+
+
+function createRecoveryCookieToken(
+  clientId,
+  eventId
+) {
+
+  const normalizedClientId =
+    normalizeClientId(clientId);
+
+  const normalizedEventId =
+    Number(eventId);
+
+  if(
+    !normalizedClientId
+    || !Number.isInteger(normalizedEventId)
+    || normalizedEventId <= 0
+    || !RECOVERY_COOKIE_SECRET
+  ) {
+    return "";
+  }
+
+  const payloadObject = {
+    c: normalizedClientId,
+    e: normalizedEventId,
+    i: Date.now()
+  };
+
+  const payload =
+    Buffer.from(
+      JSON.stringify(payloadObject),
+      "utf8"
+    ).toString("base64url");
+
+  const signature =
+    signRecoveryPayload(payload);
+
+  if(!signature) {
+    return "";
+  }
+
+  return payload + "." + signature;
+
+}
+
+
+function readRecoveryCookie(req) {
+
+  try {
+
+    if(!RECOVERY_COOKIE_SECRET) {
+      return null;
+    }
+
+    const cookies =
+      parseCookieHeader(req);
+
+    const token =
+      String(
+        cookies[RECOVERY_COOKIE_NAME] || ""
+      ).trim();
+
+    const dot =
+      token.lastIndexOf(".");
+
+    if(dot <= 0) {
+      return null;
+    }
+
+    const payload =
+      token.slice(0,dot);
+
+    const signature =
+      token.slice(dot + 1);
+
+    const expected =
+      signRecoveryPayload(payload);
+
+    if(
+      !expected
+      || signature.length !== expected.length
+      || !crypto.timingSafeEqual(
+        Buffer.from(signature),
+        Buffer.from(expected)
+      )
+    ) {
+      return null;
+    }
+
+    const decoded =
+      JSON.parse(
+        Buffer.from(
+          payload,
+          "base64url"
+        ).toString("utf8")
+      );
+
+    const clientId =
+      normalizeClientId(decoded?.c);
+
+    const eventId =
+      Number(decoded?.e);
+
+    const issuedAt =
+      Number(decoded?.i);
+
+    if(
+      !clientId
+      || !Number.isInteger(eventId)
+      || eventId <= 0
+      || !Number.isFinite(issuedAt)
+    ) {
+      return null;
+    }
+
+    if(
+      Date.now() - issuedAt
+      > RECOVERY_COOKIE_MAX_AGE_SECONDS * 1000
+    ) {
+      return null;
+    }
+
+    return {
+      clientId,
+      eventId,
+      issuedAt
+    };
+
+  }
+  catch(error) {
+    return null;
+  }
+
+}
+
+
+function setRecoveryCookie(
+  res,
+  clientId,
+  eventId
+) {
+
+  const token =
+    createRecoveryCookieToken(
+      clientId,
+      eventId
+    );
+
+  if(!token) {
+    return false;
+  }
+
+  const attributes = [
+    RECOVERY_COOKIE_NAME + "=" + encodeURIComponent(token),
+    "Max-Age=" + RECOVERY_COOKIE_MAX_AGE_SECONDS,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    "Secure"
+  ];
+
+  res.append(
+    "Set-Cookie",
+    attributes.join("; ")
+  );
+
+  return true;
+
+}
+
+
+
+
 // V12: DADOS DO CLIENTE + RECONEXÃO POR CLIENT_ID
 // REGRA OPERACIONAL: 1 EVENTO = 1 MIKROTIK
 // ============================================================
@@ -7185,11 +7442,133 @@ app.post(
       }
 
 
-      const activeOrder =
+      let activeOrder =
         findActivePaidAccess(
           context.event.id,
           normalizedClientId
         );
+
+
+      // ======================================================
+      // V16.11 - RECUPERACAO AUTOMATICA VIA COOKIE HTTPONLY
+      //
+      // Se o captive portal perdeu o client_id JS e criou outro,
+      // tentamos a identidade assinada pelo backend.
+      // O cookie so vale para o mesmo evento e somente para um
+      // pedido pago que ainda nao venceu.
+      // ======================================================
+
+      let recoveredByCookie =
+        false;
+
+      if(
+        !activeOrder
+      ) {
+
+        const recoveryIdentity =
+          readRecoveryCookie(req);
+
+        if(
+          recoveryIdentity
+          && recoveryIdentity.eventId === Number(context.event.id)
+          && recoveryIdentity.clientId !== normalizedClientId
+        ) {
+
+          const recoveryOrder =
+            findActivePaidAccess(
+              context.event.id,
+              recoveryIdentity.clientId
+            );
+
+          if(recoveryOrder) {
+
+            const oldCustomer =
+              db.prepare(`
+                SELECT *
+                FROM customers
+                WHERE client_id=?
+                LIMIT 1
+              `).get(
+                recoveryIdentity.clientId
+              );
+
+            const now =
+              nowIso();
+
+            const migrate =
+              db.transaction(
+                () => {
+
+                  if(oldCustomer) {
+                    upsertCustomerProfile({
+                      clientId: normalizedClientId,
+                      name: oldCustomer.name || "",
+                      phone: oldCustomer.phone || "",
+                      email: oldCustomer.email || ""
+                    });
+                  }
+
+                  db.prepare(`
+                    UPDATE orders
+                    SET
+                      client_id=?,
+                      effective_mac=?,
+                      ip=?,
+                      portal_last_seen_at=?
+                    WHERE id=?
+                  `).run(
+                    normalizedClientId,
+                    normalizedMac,
+                    normalizedIp,
+                    now,
+                    recoveryOrder.id
+                  );
+
+                  db.prepare(`
+                    UPDATE router_access_grants
+                    SET
+                      client_id=?,
+                      updated_at=?
+                    WHERE order_id=?
+                  `).run(
+                    normalizedClientId,
+                    now,
+                    recoveryOrder.id
+                  );
+
+                }
+              );
+
+            migrate();
+
+            activeOrder =
+              db.prepare(`
+                SELECT *
+                FROM orders
+                WHERE id=?
+                LIMIT 1
+              `).get(
+                recoveryOrder.id
+              );
+
+            recoveredByCookie =
+              Boolean(activeOrder);
+
+            if(recoveredByCookie) {
+              console.log(
+                "V16.11 RECOVERY COOKIE:",
+                activeOrder.external_ref,
+                "CLIENT_ANTIGO=" + recoveryIdentity.clientId,
+                "CLIENT_NOVO=" + normalizedClientId,
+                "MAC_NOVO=" + normalizedMac
+              );
+            }
+
+          }
+
+        }
+
+      }
 
 
       if(
@@ -7239,6 +7618,13 @@ app.post(
       }
 
 
+      setRecoveryCookie(
+        res,
+        normalizedClientId,
+        context.event.id
+      );
+
+
       const grant =
         ensureRouterGrant(
           activeOrder,
@@ -7252,6 +7638,9 @@ app.post(
 
         ok:
           true,
+
+        recovered_by_cookie:
+          recoveredByCookie,
 
         ...buildActiveAccessResponse(
           activeOrder,
@@ -7559,6 +7948,13 @@ app.post(
           normalizedClientId,
         "MAC_NOVO=" +
           normalizedMac
+      );
+
+
+      setRecoveryCookie(
+        res,
+        normalizedClientId,
+        context.event.id
       );
 
 
@@ -7963,6 +8359,13 @@ app.post(
         );
 
 
+        setRecoveryCookie(
+          res,
+          normalizedClientId,
+          context.event.id
+        );
+
+
         return res.json({
 
           ok:
@@ -8135,6 +8538,13 @@ app.post(
             normalizedClientId,
           "MAC_NOVO=" +
             normalizedMac
+        );
+
+
+        setRecoveryCookie(
+          res,
+          normalizedClientId,
+          context.event.id
         );
 
 
@@ -9606,6 +10016,27 @@ app.get(
             );
 
         }
+
+      }
+
+
+      // ======================================================
+      // V16.11 - SELAR IDENTIDADE APOS PAGAMENTO CONFIRMADO
+      // ======================================================
+
+      if(
+        order.client_id
+        && order.event_id
+        && order.status === "approved"
+        && order.access_expires_at
+        && !order.access_expired_at
+      ) {
+
+        setRecoveryCookie(
+          res,
+          order.client_id,
+          order.event_id
+        );
 
       }
 
