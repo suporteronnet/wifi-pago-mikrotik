@@ -6351,6 +6351,95 @@ function normalizeCustomerName(
 }
 
 
+// ============================================================
+// V16.12 - DADOS DE RECUPERACAO TAMBEM NO PEDIDO
+//
+// O pedido pago passa a manter uma copia do nome/telefone/e-mail.
+// Isso evita depender exclusivamente da ligacao com customers pelo
+// client_id antigo depois de "Esquecer rede" / troca de MAC privado.
+// ============================================================
+
+function ensureOrderRecoveryColumns() {
+
+  const columns =
+    db.prepare(
+      "PRAGMA table_info(orders)"
+    ).all();
+
+  const names =
+    new Set(
+      columns.map(
+        column => column.name
+      )
+    );
+
+  if(!names.has("customer_name")) {
+    db.exec(
+      "ALTER TABLE orders ADD COLUMN customer_name TEXT"
+    );
+  }
+
+  if(!names.has("customer_phone")) {
+    db.exec(
+      "ALTER TABLE orders ADD COLUMN customer_phone TEXT"
+    );
+  }
+
+  if(!names.has("customer_email")) {
+    db.exec(
+      "ALTER TABLE orders ADD COLUMN customer_email TEXT"
+    );
+  }
+
+  // Backfill seguro para compras já existentes.
+  db.exec(`
+    UPDATE orders
+    SET customer_email=COALESCE(
+      NULLIF(customer_email,''),
+      NULLIF(payer_email,''),
+      (
+        SELECT c.email
+        FROM customers c
+        WHERE c.client_id=orders.client_id
+        LIMIT 1
+      )
+    )
+    WHERE customer_email IS NULL OR TRIM(customer_email)=''
+  `);
+
+  db.exec(`
+    UPDATE orders
+    SET customer_phone=COALESCE(
+      NULLIF(customer_phone,''),
+      (
+        SELECT c.phone
+        FROM customers c
+        WHERE c.client_id=orders.client_id
+        LIMIT 1
+      )
+    )
+    WHERE customer_phone IS NULL OR TRIM(customer_phone)=''
+  `);
+
+  db.exec(`
+    UPDATE orders
+    SET customer_name=COALESCE(
+      NULLIF(customer_name,''),
+      (
+        SELECT c.name
+        FROM customers c
+        WHERE c.client_id=orders.client_id
+        LIMIT 1
+      )
+    )
+    WHERE customer_name IS NULL OR TRIM(customer_name)=''
+  `);
+
+}
+
+ensureOrderRecoveryColumns();
+
+
 function normalizeCustomerPhone(
   value
 ) {
@@ -6568,7 +6657,8 @@ function findActivePaidAccess(
 function findActivePaidAccessByContact(
   eventId,
   phone,
-  email
+  email,
+  name = ""
 ) {
 
   const normalizedPhone =
@@ -6579,6 +6669,11 @@ function findActivePaidAccessByContact(
   const normalizedEmail =
     normalizeCustomerEmail(
       email
+    );
+
+  const normalizedName =
+    normalizeCustomerName(
+      name
     );
 
 
@@ -6597,40 +6692,170 @@ function findActivePaidAccessByContact(
     nowIso();
 
 
-  return db.prepare(`
+  // ========================================================
+  // 1) MATCH ESTRITO: telefone + e-mail + mesmo evento.
+  //    Procura primeiro a copia gravada no pedido e usa
+  //    customers apenas como compatibilidade.
+  // ========================================================
 
-    SELECT
-      o.*,
-      c.name AS recovery_customer_name,
-      c.phone AS recovery_customer_phone,
-      c.email AS recovery_customer_email
+  const strictMatch =
+    db.prepare(`
 
-    FROM orders o
+      SELECT
+        o.*,
+        COALESCE(NULLIF(o.customer_name,''), c.name) AS recovery_customer_name,
+        COALESCE(NULLIF(o.customer_phone,''), c.phone) AS recovery_customer_phone,
+        COALESCE(NULLIF(o.customer_email,''), NULLIF(o.payer_email,''), c.email) AS recovery_customer_email
 
-    JOIN customers c
-      ON c.client_id=o.client_id
+      FROM orders o
 
-    WHERE
-      o.event_id=?
-      AND o.status='approved'
-      AND o.access_expires_at IS NOT NULL
-      AND o.access_expired_at IS NULL
-      AND o.access_expires_at > ?
-      AND c.phone=?
-      AND LOWER(c.email)=LOWER(?)
+      LEFT JOIN customers c
+        ON c.client_id=o.client_id
 
-    ORDER BY
-      o.access_expires_at DESC,
-      o.id DESC
+      WHERE
+        o.event_id=?
+        AND o.status IN ('approved','approved_pending_router')
+        AND o.access_expires_at IS NOT NULL
+        AND o.access_expired_at IS NULL
+        AND o.access_expires_at > ?
+        AND (
+          o.customer_phone=?
+          OR c.phone=?
+        )
+        AND (
+          LOWER(COALESCE(NULLIF(o.customer_email,''),''))=LOWER(?)
+          OR LOWER(COALESCE(NULLIF(o.payer_email,''),''))=LOWER(?)
+          OR LOWER(COALESCE(NULLIF(c.email,''),''))=LOWER(?)
+        )
 
-    LIMIT 1
+      ORDER BY
+        o.access_expires_at DESC,
+        o.id DESC
 
-  `).get(
-    eventId,
-    now,
-    normalizedPhone,
-    normalizedEmail
-  ) || null;
+      LIMIT 1
+
+    `).get(
+      eventId,
+      now,
+      normalizedPhone,
+      normalizedPhone,
+      normalizedEmail,
+      normalizedEmail,
+      normalizedEmail
+    ) || null;
+
+
+  if(strictMatch) {
+    return strictMatch;
+  }
+
+
+  // ========================================================
+  // 2) COMPATIBILIDADE COM PEDIDOS ANTIGOS.
+  //
+  // Alguns pedidos anteriores não tinham telefone copiado no
+  // próprio pedido. Se houver EXATAMENTE UM plano pago ativo
+  // neste evento com o mesmo e-mail do PIX, validamos também
+  // o telefone/nome que ainda estiver disponível em customers.
+  // Nunca escolhemos entre dois pedidos ambíguos.
+  // ========================================================
+
+  const legacyCandidates =
+    db.prepare(`
+
+      SELECT
+        o.*,
+        c.name AS recovery_customer_name,
+        c.phone AS recovery_customer_phone,
+        COALESCE(NULLIF(o.customer_email,''), NULLIF(o.payer_email,''), c.email) AS recovery_customer_email
+
+      FROM orders o
+
+      LEFT JOIN customers c
+        ON c.client_id=o.client_id
+
+      WHERE
+        o.event_id=?
+        AND o.status IN ('approved','approved_pending_router')
+        AND o.access_expires_at IS NOT NULL
+        AND o.access_expired_at IS NULL
+        AND o.access_expires_at > ?
+        AND (
+          LOWER(COALESCE(NULLIF(o.customer_email,''),''))=LOWER(?)
+          OR LOWER(COALESCE(NULLIF(o.payer_email,''),''))=LOWER(?)
+          OR LOWER(COALESCE(NULLIF(c.email,''),''))=LOWER(?)
+        )
+
+      ORDER BY
+        o.access_expires_at DESC,
+        o.id DESC
+
+      LIMIT 2
+
+    `).all(
+      eventId,
+      now,
+      normalizedEmail,
+      normalizedEmail,
+      normalizedEmail
+    );
+
+
+  if(
+    legacyCandidates.length !== 1
+  ) {
+    return null;
+  }
+
+
+  const candidate =
+    legacyCandidates[0];
+
+  const candidatePhone =
+    normalizeCustomerPhone(
+      candidate.customer_phone
+      ||
+      candidate.recovery_customer_phone
+      ||
+      ""
+    );
+
+  const candidateName =
+    normalizeCustomerName(
+      candidate.customer_name
+      ||
+      candidate.recovery_customer_name
+      ||
+      ""
+    );
+
+
+  // Se houver telefone antigo, ele TEM que ser o mesmo.
+  if(
+    candidatePhone
+    &&
+    candidatePhone !== normalizedPhone
+  ) {
+    return null;
+  }
+
+
+  // Se o telefone antigo estiver ausente, exigimos também o
+  // mesmo nome quando houver um nome antigo disponível.
+  if(
+    !candidatePhone
+    &&
+    candidateName
+    &&
+    normalizedName
+    &&
+    candidateName.toLowerCase() !== normalizedName.toLowerCase()
+  ) {
+    return null;
+  }
+
+
+  return candidate;
 
 }
 
@@ -7821,7 +8046,8 @@ app.post(
         findActivePaidAccessByContact(
           context.event.id,
           normalizedPhone,
-          normalizedEmail
+          normalizedEmail,
+          normalizeCustomerName(req.body?.customer_name || "")
         );
 
 
@@ -8421,7 +8647,8 @@ app.post(
         findActivePaidAccessByContact(
           context.event.id,
           normalizedCustomerPhone,
-          normalizedCustomerEmail
+          normalizedCustomerEmail,
+          normalizedCustomerName
         );
 
 
@@ -8914,6 +9141,12 @@ app.post(
 
             payer_email,
 
+            customer_name,
+
+            customer_phone,
+
+            customer_email,
+
             mp_payment_id,
 
             mp_order_id,
@@ -8934,7 +9167,7 @@ app.post(
 
           VALUES (
 
-            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
 
           )
 
@@ -8965,6 +9198,12 @@ app.post(
           normalizedIp,
 
           payerEmail,
+
+          normalizedCustomerName,
+
+          normalizedCustomerPhone,
+
+          normalizedCustomerEmail,
 
           String(
 
