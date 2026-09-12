@@ -18859,6 +18859,9 @@ function buildGeneratedHotspotLogin(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>Wi-Fi Pago</title>
   <style>
     body{
@@ -18891,13 +18894,10 @@ function buildGeneratedHotspotLogin(
     @keyframes spin{
       to{transform:rotate(360deg);}
     }
-    .dados{
-      margin-top:18px;
-      padding:12px;
-      border-radius:10px;
-      background:#020617;
+    .muted{
       color:#94a3b8;
       font-size:13px;
+      line-height:1.5;
     }
   </style>
 </head>
@@ -18908,21 +18908,13 @@ function buildGeneratedHotspotLogin(
   <h1>Wi-Fi Pago</h1>
 
   <p>
-    Preparando sua página de pagamento...
+    Conectando seu acesso...
   </p>
 
   <div class="spinner"></div>
 
-  <p>
+  <div class="muted">
     Aguarde alguns segundos.
-  </p>
-
-  <div class="dados">
-    Dispositivo:
-    <strong>$(mac)</strong>
-    <br>
-    IP:
-    <strong>$(ip)</strong>
   </div>
 
 </div>
@@ -18947,8 +18939,102 @@ function buildGeneratedHotspotLogin(
   var routerKey =
     "${routerKey}";
 
+
+  function createDeviceId(){
+
+    try{
+
+      if(
+        window.crypto
+        &&
+        typeof window.crypto.randomUUID === "function"
+      ){
+
+        return (
+          "dev_" +
+          window.crypto.randomUUID()
+        );
+
+      }
+
+    }
+    catch(error){
+    }
+
+
+    return (
+      "dev_" +
+      Date.now().toString(36) +
+      "_" +
+      Math.random().toString(36).slice(2) +
+      Math.random().toString(36).slice(2)
+    );
+
+  }
+
+
+  function getPersistentDeviceId(){
+
+    var key =
+      "wifi_pago_device_id";
+
+    var current =
+      "";
+
+
+    try{
+
+      current =
+        String(
+          localStorage.getItem(
+            key
+          )
+          ||
+          ""
+        ).trim();
+
+    }
+    catch(error){
+    }
+
+
+    if(
+      current
+    ){
+
+      return current;
+
+    }
+
+
+    current =
+      createDeviceId();
+
+
+    try{
+
+      localStorage.setItem(
+        key,
+        current
+      );
+
+    }
+    catch(error){
+    }
+
+
+    return current;
+
+  }
+
+
+  var deviceId =
+    getPersistentDeviceId();
+
+
   var portal =
     "https://wifi-pago-mikrotik-production-44d5.up.railway.app/";
+
 
   var destino =
 
@@ -18959,6 +19045,9 @@ function buildGeneratedHotspotLogin(
 
     "&ip=" +
     encodeURIComponent(ip) +
+
+    "&device_id=" +
+    encodeURIComponent(deviceId) +
 
     "&linkLogin=" +
     encodeURIComponent(linkLogin) +
@@ -18982,7 +19071,7 @@ function buildGeneratedHotspotLogin(
         destino
       );
     },
-    1200
+    700
   );
 
 <\/script>
