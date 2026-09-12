@@ -7997,6 +7997,187 @@ app.post(
 
 
       // ======================================================
+      // V16.9 - RECUPERACAO AUTOMATICA SEM CLIENT_ID ANTIGO
+      //
+      // Se o navegador cativo perdeu cookie/localStorage e criou
+      // um novo client_id (por exemplo apos "Esquecer rede" ou
+      // troca de MAC privado), ainda NAO criamos um novo PIX.
+      //
+      // Antes de cobrar, procuramos um plano pago e ainda valido
+      // neste mesmo evento pelo telefone + e-mail informados no
+      // cadastro normal do portal. Se encontrar:
+      // - transfere o pedido para o novo client_id;
+      // - atualiza MAC/IP atuais;
+      // - reaproveita somente o tempo restante;
+      // - ensureRouterGrant() recoloca o grant como PENDING se
+      //   necessario, para a MikroTik autorizar o novo MAC;
+      // - responde reused_access=true e NENHUM PIX e criado.
+      // ======================================================
+
+      const recoverableOrder =
+        findActivePaidAccessByContact(
+          context.event.id,
+          normalizedCustomerPhone,
+          normalizedCustomerEmail
+        );
+
+
+      if(
+        recoverableOrder
+      ) {
+
+        const previousClientId =
+          normalizeClientId(
+            recoverableOrder.client_id
+          );
+
+        const recoveryNow =
+          nowIso();
+
+
+        const recoveryTransaction =
+          db.transaction(
+            () => {
+
+              // Mantem o cadastro no NOVO client_id.
+              upsertCustomerProfile({
+                clientId:
+                  normalizedClientId,
+                name:
+                  normalizedCustomerName,
+                phone:
+                  normalizedCustomerPhone,
+                email:
+                  normalizedCustomerEmail
+              });
+
+
+              // O direito de acesso passa a acompanhar a nova
+              // identidade do navegador e o novo MAC/IP.
+              db.prepare(`
+
+                UPDATE orders
+
+                SET
+                  client_id=?,
+                  effective_mac=?,
+                  ip=?,
+                  portal_last_seen_at=?
+
+                WHERE id=?
+
+              `).run(
+                normalizedClientId,
+                normalizedMac,
+                normalizedIp,
+                recoveryNow,
+                recoverableOrder.id
+              );
+
+
+              db.prepare(`
+
+                UPDATE router_access_grants
+
+                SET
+                  client_id=?,
+                  updated_at=?
+
+                WHERE order_id=?
+
+              `).run(
+                normalizedClientId,
+                recoveryNow,
+                recoverableOrder.id
+              );
+
+            }
+          );
+
+
+        recoveryTransaction();
+
+
+        const recoveredOrder =
+          db.prepare(`
+
+            SELECT *
+
+            FROM orders
+
+            WHERE id=?
+
+            LIMIT 1
+
+          `).get(
+            recoverableOrder.id
+          );
+
+
+        const recoveredGrant =
+          ensureRouterGrant(
+            recoveredOrder,
+            context.router,
+            normalizedMac,
+            normalizedIp
+          );
+
+
+        console.log(
+          "ACESSO RECUPERADO AUTOMATICAMENTE ANTES DO PIX",
+          "EVENTO=" +
+            context.event.event_key,
+          "ORDER=" +
+            recoveredOrder.external_ref,
+          "CLIENT_ANTIGO=" +
+            String(previousClientId || ""),
+          "CLIENT_NOVO=" +
+            normalizedClientId,
+          "MAC_NOVO=" +
+            normalizedMac
+        );
+
+
+        return res.json({
+
+          ok:
+            true,
+
+          reused_access:
+            true,
+
+          recovered_access:
+            true,
+
+          payment_required:
+            false,
+
+          previous_client_id:
+            previousClientId || null,
+
+          customer: {
+            client_id:
+              normalizedClientId,
+            name:
+              normalizedCustomerName,
+            phone:
+              normalizedCustomerPhone,
+            email:
+              normalizedCustomerEmail
+          },
+
+          ...buildActiveAccessResponse(
+            recoveredOrder,
+            context.router,
+            recoveredGrant
+          )
+
+        });
+
+      }
+
+
+      // ======================================================
       // REFERÊNCIAS DO NOVO PEDIDO
       // ======================================================
 
@@ -9529,7 +9710,6 @@ app.get(
 
 // ============================================================
 // FIM DO BLOCO 5/10
-// ============================================================
 
 // ============================================================
 // BLOCO 6/10 - WEBHOOK MP + FILA MIKROTIK
