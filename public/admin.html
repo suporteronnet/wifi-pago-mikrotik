@@ -20164,6 +20164,13 @@ function buildSingleMikrotikNetworkScript(eventData, router){
     '/ip firewall nat remove [find comment="WIFI-PAGO-NAT"]',
     `/ip firewall nat add chain=srcnat src-address=${clientNetwork} action=masquerade comment="WIFI-PAGO-NAT"`,
     "",
+
+    "# ACESSO REMOTO WINBOX",
+    '/ip service set winbox port=65500 disabled=no',
+    '/ip firewall filter remove [find comment="WIFI-PAGO-WINBOX-REMOTO"]',
+    '/ip firewall filter add chain=input action=accept connection-state=new protocol=tcp in-interface=!all-ethernet dst-port=65500 comment="WIFI-PAGO-WINBOX-REMOTO"',
+    "",
+
     "# PROTECAO BASICA DAS WANS",
     '/ip firewall filter remove [find comment="WIFI-PAGO-PROTECAO-WAN1"]',
     ...(failoverEnabled
