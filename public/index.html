@@ -1706,29 +1706,6 @@ const routerKey =
   "";
 
 
-// ============================================================
-// V16.6 - IDENTIDADE PRINCIPAL VINDO DO DOMÍNIO LOCAL wifi.pago
-//
-// O login.html da MikroTik cria e mantém um DEVICE_ID persistente.
-// Esse DEVICE_ID passa a ser usado como client_id do backend.
-// Assim, se o celular trocar o MAC, o plano continua ligado ao
-// mesmo aparelho e o backend pode reaplicar o acesso automaticamente.
-// ============================================================
-
-const hotspotDeviceId =
-  String(
-    qs.get("device_id") || ""
-  )
-    .trim()
-    .replace(
-      /[^a-zA-Z0-9_-]/g,
-      ""
-    )
-    .slice(
-      0,
-      100
-    );
-
 
 // ============================================================
 // CLIENT_ID PERSISTENTE
@@ -1852,47 +1829,6 @@ function getClientId(){
     "wifi_pago_client_id";
 
 
-  // ==========================================================
-  // PRIORIDADE 1:
-  // DEVICE_ID persistente criado no domínio local wifi.pago.
-  //
-  // Esse é o identificador que deve sobreviver à troca de MAC.
-  // ==========================================================
-
-  if(
-    hotspotDeviceId
-    &&
-    hotspotDeviceId.length >= 10
-  ){
-
-    try{
-
-      localStorage.setItem(
-        key,
-        hotspotDeviceId
-      );
-
-    }
-    catch(error){
-    }
-
-
-    saveClientIdCookie(
-      hotspotDeviceId
-    );
-
-
-    return hotspotDeviceId;
-
-  }
-
-
-  // ==========================================================
-  // COMPATIBILIDADE:
-  // Se o portal for aberto sem device_id, ainda tentamos
-  // recuperar a identidade antiga salva no Railway.
-  // ==========================================================
-
   let localValue =
     "";
 
@@ -1904,7 +1840,11 @@ function getClientId(){
 
     localValue =
       String(
-        localStorage.getItem(key) || ""
+        localStorage.getItem(
+          key
+        )
+        ||
+        ""
       ).trim();
 
   }
@@ -1914,13 +1854,27 @@ function getClientId(){
 
   cookieValue =
     String(
-      getCookieValue(key) || ""
+      getCookieValue(
+        key
+      )
+      ||
+      ""
     ).trim();
 
 
-  if(localValue){
+  // ==========================================================
+  // PRIORIDADE 1:
+  // client_id já salvo no domínio do Railway.
+  // ==========================================================
 
-    if(cookieValue !== localValue){
+  if(
+    localValue
+  ){
+
+    if(
+      cookieValue !==
+      localValue
+    ){
 
       saveClientIdCookie(
         localValue
@@ -1928,12 +1882,20 @@ function getClientId(){
 
     }
 
+
     return localValue;
 
   }
 
 
-  if(cookieValue){
+  // ==========================================================
+  // PRIORIDADE 2:
+  // cookie persistente do próprio portal Railway.
+  // ==========================================================
+
+  if(
+    cookieValue
+  ){
 
     try{
 
@@ -1946,10 +1908,16 @@ function getClientId(){
     catch(error){
     }
 
+
     return cookieValue;
 
   }
 
+
+  // ==========================================================
+  // PRIMEIRO ACESSO:
+  // cria somente uma identidade cli_... no domínio Railway.
+  // ==========================================================
 
   const newValue =
     createClientId();
