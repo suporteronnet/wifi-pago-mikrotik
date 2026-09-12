@@ -1867,6 +1867,58 @@ function getClientId(){
   // client_id já salvo no domínio do Railway.
   // ==========================================================
 
+  // ==========================================================
+  // MIGRAÇÃO V16.8:
+  // versões anteriores V16.6 gravaram "dev_..." dentro da mesma
+  // chave wifi_pago_client_id. Esses valores NÃO podem continuar
+  // sendo usados agora que voltamos ao padrão original "cli_...".
+  //
+  // Se encontrar um identificador antigo dev_..., descartamos.
+  // Identificadores cli_... existentes continuam preservados.
+  // ==========================================================
+
+  if(
+    localValue
+    &&
+    !localValue.startsWith(
+      "cli_"
+    )
+  ){
+
+    try{
+
+      localStorage.removeItem(
+        key
+      );
+
+    }
+    catch(error){
+    }
+
+    localValue =
+      "";
+
+  }
+
+
+  if(
+    cookieValue
+    &&
+    !cookieValue.startsWith(
+      "cli_"
+    )
+  ){
+
+    cookieValue =
+      "";
+
+    document.cookie =
+      key +
+      "=; Max-Age=0; Path=/; SameSite=Lax";
+
+  }
+
+
   if(
     localValue
   ){
