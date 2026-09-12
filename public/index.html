@@ -1626,6 +1626,19 @@ const hotspotReturn =
 
 
 // ============================================================
+// V16.1 - RETORNO DO LOGIN DO HOTSPOT APÓS PIX PAGO
+//
+// É separado do hotspot_return da cortesia para permitir um
+// segundo login formal depois que a MikroTik troca o usuário
+// temporário pelo usuário do plano pago.
+// ============================================================
+
+const paidHotspotReturn =
+  qs.get("paid_hotspot_return") ===
+  "1";
+
+
+// ============================================================
 // DETECTAR SISTEMA DO CLIENTE
 //
 // iPhone/iPad:
@@ -4516,6 +4529,164 @@ function completeHotspotLogin(){
 }
 
 // ============================================================
+// V16.1 - CONCLUIR LOGIN DO HOTSPOT APÓS PIX PAGO
+//
+// A cortesia já pode ter executado completeHotspotLogin() e marcado
+// hotspotLoginAttempted=true. Por isso o plano pago precisa de uma
+// tentativa própria.
+//
+// Fluxo:
+// 1. Railway confirma o PIX.
+// 2. MikroTik aplica ALLOW e envia ACK.
+// 3. /api/order passa a retornar status="approved" + grant ativo.
+// 4. O portal faz um novo POST em $(link-login), usando MAC/MAC.
+// 5. A MikroTik autentica o usuário recém-criado do plano pago.
+// 6. O navegador volta com paid_hotspot_return=1 e não repete o POST.
+// ============================================================
+
+let paidHotspotLoginAttempted =
+  false;
+
+
+function completePaidHotspotLogin(){
+
+  if(
+    paidHotspotLoginAttempted
+    ||
+    paidHotspotReturn
+    ||
+    !linkLogin
+    ||
+    !mac
+  ){
+    return false;
+  }
+
+
+  paidHotspotLoginAttempted =
+    true;
+
+
+  try{
+
+    const actionUrl =
+      String(linkLogin)
+        .split("?")[0];
+
+
+    const form =
+      document.createElement(
+        "form"
+      );
+
+
+    form.method =
+      "POST";
+
+    form.action =
+      actionUrl;
+
+    form.style.display =
+      "none";
+
+
+    const fields = {
+
+      username:
+        mac,
+
+      password:
+        mac,
+
+      dst:
+        (() => {
+
+          const url =
+            new URL(
+              window.location.href
+            );
+
+          url.searchParams.set(
+            "paid_hotspot_return",
+            "1"
+          );
+
+          return url.toString();
+
+        })(),
+
+      popup:
+        "true"
+
+    };
+
+
+    Object
+      .entries(fields)
+      .forEach(
+        ([name,value]) => {
+
+          const input =
+            document.createElement(
+              "input"
+            );
+
+          input.type =
+            "hidden";
+
+          input.name =
+            name;
+
+          input.value =
+            value;
+
+          form.appendChild(
+            input
+          );
+
+        }
+      );
+
+
+    document.body.appendChild(
+      form
+    );
+
+
+    console.log(
+      "WI-FI TOTAL: concluindo login do plano pago no HotSpot..."
+    );
+
+
+    setTimeout(
+      () => {
+        form.submit();
+      },
+      500
+    );
+
+
+    return true;
+
+  }
+  catch(error){
+
+    paidHotspotLoginAttempted =
+      false;
+
+    console.error(
+      "WIFI-PAGO: erro ao concluir login do plano pago no HotSpot:",
+      error
+    );
+
+    return false;
+
+  }
+
+}
+
+
+// ============================================================
 // CONSULTAR PAGAMENTO
 // ============================================================
 
@@ -4801,6 +4972,42 @@ async function poll(){
       )
 
     ){
+
+      // ======================================================
+      // V16.1 - LOGIN FORMAL DO PLANO PAGO
+      //
+      // O ALLOW da MikroTik remove a sessão temporária e cria um
+      // novo usuário com o tempo do plano. Depois do ACK precisamos
+      // autenticar novamente o aparelho nesse novo usuário.
+      //
+      // Se este já for o retorno desse POST, seguimos normalmente
+      // para a tela "Acesso liberado".
+      // ======================================================
+
+      if(
+        !paidHotspotReturn
+        &&
+        completePaidHotspotLogin()
+      ){
+
+        const statusElement =
+          document.getElementById(
+            "payStatus"
+          );
+
+        if(
+          statusElement
+        ){
+
+          statusElement.textContent =
+            "Pagamento aprovado. Ativando seu plano no Wi-Fi...";
+
+        }
+
+        return;
+
+      }
+
 
       clearPendingPix();
 
