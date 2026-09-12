@@ -5944,13 +5944,22 @@ async function copyPix(){
 
 
 // ============================================================
-// INICIAR
+// INICIAR - V16.9
+//
+// ORDEM CORRIGIDA:
+//
+// 1. Primeiro verifica se o cliente já possui plano ativo.
+// 2. Se tiver, NÃO restaura PIX antigo e NÃO mostra planos.
+// 3. Se não tiver acesso ativo, tenta restaurar PIX pendente.
+// 4. Se não houver PIX pendente, carrega os planos.
+//
+// Isso garante o roaming automático quando o MAC muda.
 // ============================================================
 
 async function startPortal(){
 
   // ==========================================================
-  // V15 - FUNIL: PORTAL ABERTO
+  // FUNIL: PORTAL ABERTO
   // ==========================================================
 
   installRegistrationFunnelListeners();
@@ -5973,62 +5982,97 @@ async function startPortal(){
   );
 
 
-  // Remove QR Codes antigos salvos por versões anteriores do portal.
-  // A versão atual continua podendo recuperar apenas o PIX criado
-  // nesta mesma versão e dentro da janela curta de segurança.
+  // ==========================================================
+  // 1. PRIORIDADE MÁXIMA:
+  // VERIFICAR PLANO JÁ ATIVO
+  //
+  // Se o mesmo client_id já possui plano válido,
+  // o backend atualiza o grant para o MAC atual.
+  //
+  // NÃO devemos restaurar PIX antigo antes desta etapa.
+  // ==========================================================
+
+  const hasActiveAccess =
+    await checkExistingAccess();
+
+
+  if(
+    hasActiveAccess
+  ){
+
+    // Existe plano válido.
+    // checkExistingAccess() já:
+    // - encontrou o pedido;
+    // - atualizou currentOrder;
+    // - chamou showExistingAccess();
+    // - iniciou poll() se o grant ainda estiver pending.
+
+    return;
+  }
+
+
+  // ==========================================================
+  // 2. CLIENTE NÃO POSSUI PLANO ATIVO
+  //
+  // Agora sim podemos limpar caches antigos e procurar
+  // um PIX pendente ainda válido deste mesmo navegador.
+  // ==========================================================
+
   purgeLegacyPixCache();
 
-  // Se a janela cativa fechar após a cortesia, ao abrir novamente
-  // recuperamos o mesmo PIX salvo neste aparelho, sem criar outro.
+
   const restoredPix =
     await restorePendingPix();
+
 
   if(
     restoredPix
   ){
 
-    // V12.3:
-    // Após o retorno do HotSpot não fazemos mais 3 rolagens
-    // automáticas. O PIX recuperado já realizou a única rolagem
-    // permitida em renderPendingPix(). Daqui em diante apenas
-    // removemos eventual foco automático do navegador.
+    // ========================================================
+    // Após retorno do HotSpot não fazemos rolagens repetidas.
+    // Apenas removemos eventual foco automático.
+    // ========================================================
+
     if(
       hotspotReturn
     ){
 
       try{
-        document.activeElement?.blur?.();
+
+        document.activeElement
+          ?.blur
+          ?.();
+
       }
       catch(error){
       }
 
 
       try{
+
         sessionStorage.removeItem(
           "wifi_total_scroll_after_hotspot_login"
         );
+
       }
       catch(error){
       }
 
     }
 
+
     return;
   }
 
-  const hasActiveAccess =
-    await checkExistingAccess();
 
+  // ==========================================================
+  // 3. SEM PLANO ATIVO E SEM PIX PENDENTE
+  //
+  // Mostrar os planos normalmente.
+  // ==========================================================
 
-  // Mesmo com acesso ativo, manter os planos carregáveis apenas
-  // se o usuário ainda não tem um plano válido.
-  if(
-    !hasActiveAccess
-  ){
-
-    await loadPlans();
-
-  }
+  await loadPlans();
 
 }
 
