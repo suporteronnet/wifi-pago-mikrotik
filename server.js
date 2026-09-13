@@ -6642,16 +6642,32 @@ function findActivePaidAccess(
 
 
 // ============================================================
-// V16.4 - RECUPERAR ACESSO PAGO POR TELEFONE + E-MAIL
+// V16.13 - RECUPERAR ACESSO PAGO POR TELEFONE + E-MAIL
 //
-// Usado quando o navegador cativo perdeu o client_id após uma
-// troca de MAC privado.
+// CORRECOES:
 //
-// Segurança:
-// - exige telefone E e-mail válidos;
-// - considera somente plano pago ainda ativo;
-// - restringe ao mesmo evento;
-// - não reinicia o relógio do plano.
+// 1. Funciona com pedidos atuais.
+//
+// 2. Compatibilidade com pedidos antigos que ainda nao tinham
+//    access_expires_at gravado.
+//
+// 3. Para pedido antigo:
+//    vencimento = approved_at + minutes.
+//
+// 4. NUNCA reinicia o tempo do plano.
+//
+// 5. NUNCA adiciona minutos novos.
+//
+// 6. Exige mesmo evento.
+//
+// 7. Prioriza telefone + e-mail.
+//
+// 8. Usa payer_email como compatibilidade para compras antigas.
+//
+// 9. Se houver mais de um candidato ambiguo, NAO libera.
+//
+// 10. Gera logs detalhados no Railway para sabermos exatamente
+//     por que uma recuperacao foi aceita ou recusada.
 // ============================================================
 
 function findActivePaidAccessByContact(
@@ -6666,10 +6682,12 @@ function findActivePaidAccessByContact(
       phone
     );
 
+
   const normalizedEmail =
     normalizeCustomerEmail(
       email
     );
+
 
   const normalizedName =
     normalizeCustomerName(
@@ -6683,91 +6701,42 @@ function findActivePaidAccessByContact(
     !normalizedEmail
   ) {
 
+    console.log(
+      "RECOVERY V16.13: dados invalidos",
+      "EVENTO=" + eventId,
+      "PHONE_OK=" + Boolean(normalizedPhone),
+      "EMAIL_OK=" + Boolean(normalizedEmail)
+    );
+
     return null;
 
   }
 
 
-  const now =
-    nowIso();
+  const nowMs =
+    Date.now();
 
 
-  // ========================================================
-  // 1) MATCH ESTRITO: telefone + e-mail + mesmo evento.
-  //    Procura primeiro a copia gravada no pedido e usa
-  //    customers apenas como compatibilidade.
-  // ========================================================
-
-  const strictMatch =
-    db.prepare(`
-
-      SELECT
-        o.*,
-        COALESCE(NULLIF(o.customer_name,''), c.name) AS recovery_customer_name,
-        COALESCE(NULLIF(o.customer_phone,''), c.phone) AS recovery_customer_phone,
-        COALESCE(NULLIF(o.customer_email,''), NULLIF(o.payer_email,''), c.email) AS recovery_customer_email
-
-      FROM orders o
-
-      LEFT JOIN customers c
-        ON c.client_id=o.client_id
-
-      WHERE
-        o.event_id=?
-        AND o.status IN ('approved','approved_pending_router')
-        AND o.access_expires_at IS NOT NULL
-        AND o.access_expired_at IS NULL
-        AND o.access_expires_at > ?
-        AND (
-          o.customer_phone=?
-          OR c.phone=?
-        )
-        AND (
-          LOWER(COALESCE(NULLIF(o.customer_email,''),''))=LOWER(?)
-          OR LOWER(COALESCE(NULLIF(o.payer_email,''),''))=LOWER(?)
-          OR LOWER(COALESCE(NULLIF(c.email,''),''))=LOWER(?)
-        )
-
-      ORDER BY
-        o.access_expires_at DESC,
-        o.id DESC
-
-      LIMIT 1
-
-    `).get(
-      eventId,
-      now,
-      normalizedPhone,
-      normalizedPhone,
-      normalizedEmail,
-      normalizedEmail,
-      normalizedEmail
-    ) || null;
-
-
-  if(strictMatch) {
-    return strictMatch;
-  }
-
-
-  // ========================================================
-  // 2) COMPATIBILIDADE COM PEDIDOS ANTIGOS.
+  // ==========================================================
+  // BUSCAR POSSIVEIS PEDIDOS PAGOS DO MESMO EVENTO
   //
-  // Alguns pedidos anteriores não tinham telefone copiado no
-  // próprio pedido. Se houver EXATAMENTE UM plano pago ativo
-  // neste evento com o mesmo e-mail do PIX, validamos também
-  // o telefone/nome que ainda estiver disponível em customers.
-  // Nunca escolhemos entre dois pedidos ambíguos.
-  // ========================================================
+  // Importante:
+  // nao exigimos access_expires_at na SQL porque pedidos
+  // antigos podem nao ter esse campo preenchido.
+  // ==========================================================
 
-  const legacyCandidates =
+  const candidates =
     db.prepare(`
 
       SELECT
+
         o.*,
-        c.name AS recovery_customer_name,
-        c.phone AS recovery_customer_phone,
-        COALESCE(NULLIF(o.customer_email,''), NULLIF(o.payer_email,''), c.email) AS recovery_customer_email
+
+        c.name AS profile_name,
+
+        c.phone AS profile_phone,
+
+        c.email AS profile_email
 
       FROM orders o
 
@@ -6775,84 +6744,441 @@ function findActivePaidAccessByContact(
         ON c.client_id=o.client_id
 
       WHERE
+
         o.event_id=?
-        AND o.status IN ('approved','approved_pending_router')
-        AND o.access_expires_at IS NOT NULL
-        AND o.access_expired_at IS NULL
-        AND o.access_expires_at > ?
-        AND (
-          LOWER(COALESCE(NULLIF(o.customer_email,''),''))=LOWER(?)
-          OR LOWER(COALESCE(NULLIF(o.payer_email,''),''))=LOWER(?)
-          OR LOWER(COALESCE(NULLIF(c.email,''),''))=LOWER(?)
+
+        AND o.status IN (
+          'approved',
+          'approved_pending_router'
         )
 
+        AND o.approved_at IS NOT NULL
+
+        AND o.access_expired_at IS NULL
+
       ORDER BY
-        o.access_expires_at DESC,
         o.id DESC
 
-      LIMIT 2
+      LIMIT 50
 
     `).all(
-      eventId,
-      now,
-      normalizedEmail,
-      normalizedEmail,
-      normalizedEmail
+      eventId
     );
 
 
-  if(
-    legacyCandidates.length !== 1
+  console.log(
+    "RECOVERY V16.13: candidatos",
+    "EVENTO=" + eventId,
+    "TOTAL=" + candidates.length
+  );
+
+
+  const validMatches = [];
+
+
+  for(
+    const candidate
+    of candidates
   ) {
-    return null;
+
+    // ========================================================
+    // E-MAIL
+    // ========================================================
+
+    const candidateEmail =
+      normalizeCustomerEmail(
+
+        candidate.customer_email
+
+        ||
+
+        candidate.payer_email
+
+        ||
+
+        candidate.profile_email
+
+        ||
+
+        ""
+
+      );
+
+
+    // ========================================================
+    // TELEFONE
+    // ========================================================
+
+    const candidatePhone =
+      normalizeCustomerPhone(
+
+        candidate.customer_phone
+
+        ||
+
+        candidate.profile_phone
+
+        ||
+
+        ""
+
+      );
+
+
+    // ========================================================
+    // NOME
+    // ========================================================
+
+    const candidateName =
+      normalizeCustomerName(
+
+        candidate.customer_name
+
+        ||
+
+        candidate.profile_name
+
+        ||
+
+        ""
+
+      );
+
+
+    // ========================================================
+    // CALCULAR VENCIMENTO REAL
+    //
+    // 1. Usa access_expires_at se existir.
+    //
+    // 2. Para registros antigos:
+    //    approved_at + minutes.
+    //
+    // Isso NAO cria novo tempo.
+    // Apenas reconstrói o vencimento que o pedido originalmente
+    // deveria possuir.
+    // ========================================================
+
+    let expiresMs =
+      Date.parse(
+        candidate.access_expires_at
+        ||
+        ""
+      );
+
+
+    let reconstructedExpiration =
+      false;
+
+
+    if(
+      !Number.isFinite(
+        expiresMs
+      )
+    ) {
+
+      const approvedMs =
+        Date.parse(
+          candidate.approved_at
+          ||
+          ""
+        );
+
+
+      const minutes =
+        Number(
+          candidate.minutes
+          ||
+          0
+        );
+
+
+      if(
+        Number.isFinite(
+          approvedMs
+        )
+        &&
+        Number.isFinite(
+          minutes
+        )
+        &&
+        minutes > 0
+      ) {
+
+        expiresMs =
+          approvedMs
+          +
+          (
+            minutes
+            *
+            60
+            *
+            1000
+          );
+
+
+        reconstructedExpiration =
+          true;
+
+      }
+
+    }
+
+
+    // ========================================================
+    // SEM VENCIMENTO CONFIAVEL
+    // ========================================================
+
+    if(
+      !Number.isFinite(
+        expiresMs
+      )
+    ) {
+
+      console.log(
+        "RECOVERY V16.13: rejeitado sem vencimento",
+        candidate.external_ref
+      );
+
+      continue;
+
+    }
+
+
+    // ========================================================
+    // PLANO JA VENCEU
+    // ========================================================
+
+    if(
+      expiresMs <=
+      nowMs
+    ) {
+
+      console.log(
+        "RECOVERY V16.13: rejeitado expirado",
+        candidate.external_ref,
+        "EXPIRA=" +
+          new Date(
+            expiresMs
+          ).toISOString()
+      );
+
+      continue;
+
+    }
+
+
+    // ========================================================
+    // VALIDAR E-MAIL
+    // ========================================================
+
+    if(
+      !candidateEmail
+      ||
+      candidateEmail !==
+        normalizedEmail
+    ) {
+
+      console.log(
+        "RECOVERY V16.13: rejeitado email",
+        candidate.external_ref
+      );
+
+      continue;
+
+    }
+
+
+    // ========================================================
+    // VALIDAR TELEFONE
+    //
+    // Se o pedido antigo possui telefone, TEM que coincidir.
+    // ========================================================
+
+    if(
+      candidatePhone
+      &&
+      candidatePhone !==
+        normalizedPhone
+    ) {
+
+      console.log(
+        "RECOVERY V16.13: rejeitado telefone",
+        candidate.external_ref
+      );
+
+      continue;
+
+    }
+
+
+    // ========================================================
+    // PEDIDO MUITO ANTIGO SEM TELEFONE
+    //
+    // Exigimos nome também, quando ele estiver disponível.
+    // ========================================================
+
+    if(
+      !candidatePhone
+      &&
+      candidateName
+    ) {
+
+      if(
+        !normalizedName
+        ||
+        candidateName
+          .toLowerCase()
+        !==
+        normalizedName
+          .toLowerCase()
+      ) {
+
+        console.log(
+          "RECOVERY V16.13: rejeitado nome legado",
+          candidate.external_ref
+        );
+
+        continue;
+
+      }
+
+    }
+
+
+    validMatches.push({
+
+      candidate,
+
+      expiresMs,
+
+      reconstructedExpiration
+
+    });
+
+
+    console.log(
+      "RECOVERY V16.13: candidato valido",
+      candidate.external_ref,
+      "LEGACY_EXPIRATION=" +
+        reconstructedExpiration,
+      "EXPIRA=" +
+        new Date(
+          expiresMs
+        ).toISOString()
+    );
+
   }
+
+
+  // ==========================================================
+  // SEGURANCA CONTRA AMBIGUIDADE
+  //
+  // Nao podemos escolher aleatoriamente entre dois acessos.
+  // ==========================================================
+
+  if(
+    validMatches.length !==
+    1
+  ) {
+
+    console.log(
+      "RECOVERY V16.13: nao recuperado",
+      "EVENTO=" + eventId,
+      "MATCHES=" + validMatches.length
+    );
+
+    return null;
+
+  }
+
+
+  const match =
+    validMatches[0];
 
 
   const candidate =
-    legacyCandidates[0];
-
-  const candidatePhone =
-    normalizeCustomerPhone(
-      candidate.customer_phone
-      ||
-      candidate.recovery_customer_phone
-      ||
-      ""
-    );
-
-  const candidateName =
-    normalizeCustomerName(
-      candidate.customer_name
-      ||
-      candidate.recovery_customer_name
-      ||
-      ""
-    );
+    match.candidate;
 
 
-  // Se houver telefone antigo, ele TEM que ser o mesmo.
+  // ==========================================================
+  // PEDIDO LEGADO:
+  // GRAVAR O VENCIMENTO RECONSTRUIDO
+  //
+  // Isto NAO muda o inicio e NAO reinicia o plano.
+  //
+  // Exemplo:
+  //
+  // aprovado 18:00
+  // plano 60 min
+  //
+  // access_expires_at = 19:00
+  //
+  // Mesmo que a recuperacao aconteca 18:40,
+  // continua vencendo 19:00.
+  // ==========================================================
+
   if(
-    candidatePhone
+    match.reconstructedExpiration
     &&
-    candidatePhone !== normalizedPhone
+    !candidate.access_expires_at
   ) {
-    return null;
+
+    const reconstructedIso =
+      new Date(
+        match.expiresMs
+      ).toISOString();
+
+
+    db.prepare(`
+
+      UPDATE orders
+
+      SET
+        access_expires_at=?
+
+      WHERE
+        id=?
+        AND (
+          access_expires_at IS NULL
+          OR
+          TRIM(access_expires_at)=''
+        )
+
+    `).run(
+      reconstructedIso,
+      candidate.id
+    );
+
+
+    candidate.access_expires_at =
+      reconstructedIso;
+
+
+    console.log(
+      "RECOVERY V16.13: vencimento legado reconstruido",
+      candidate.external_ref,
+      reconstructedIso
+    );
+
   }
 
 
-  // Se o telefone antigo estiver ausente, exigimos também o
-  // mesmo nome quando houver um nome antigo disponível.
-  if(
-    !candidatePhone
-    &&
-    candidateName
-    &&
-    normalizedName
-    &&
-    candidateName.toLowerCase() !== normalizedName.toLowerCase()
-  ) {
-    return null;
-  }
+  console.log(
+    "RECOVERY V16.13: ACESSO ENCONTRADO",
+    candidate.external_ref,
+    "CLIENT_ANTIGO=" +
+      String(
+        candidate.client_id
+        ||
+        ""
+      ),
+    "EXPIRA=" +
+      String(
+        candidate.access_expires_at
+        ||
+        ""
+      )
+  );
 
 
   return candidate;
