@@ -1489,16 +1489,17 @@ code{
 
   </section>
 
-  <div class="section-title">
+  <div class="section-title" id="plansTitle" style="display:none;">
     Escolha seu plano
   </div>
 
   <div
     class="grid"
-    id="plans">
+    id="plans"
+    style="display:none;">
   </div>
 
-  <div class="plan-note">
+  <div class="plan-note" id="plansNote" style="display:none;">
     ⓘ A velocidade pode variar de acordo com a disponibilidade da rede.
   </div>
 
@@ -3231,6 +3232,515 @@ function splitPlanRate(rate){
     upload:
       parts[1] || "-"
   };
+
+}
+
+
+// ============================================================
+// V16.14 - RECUPERACAO SILENCIOSA ANTES DE MOSTRAR PLANOS
+//
+// Fluxo:
+// 1. client_id / cookie continuam sendo tentados primeiro por
+//    checkExistingAccess().
+// 2. Se nao localizar, aguardamos nome + telefone + e-mail.
+// 3. Assim que os dados estiverem validos, chamamos
+//    /api/access/recover automaticamente.
+// 4. Se o pagamento ainda estiver ativo, migramos o acesso para
+//    este client_id / MAC / IP e NAO mostramos os planos.
+// 5. Se nao houver plano ativo, somente entao mostramos os planos.
+//
+// Nao existe botao "recuperar acesso".
+// ============================================================
+
+let silentRecoveryTimer =
+  null;
+
+let silentRecoveryInFlight =
+  false;
+
+let silentRecoveryLastKey =
+  "";
+
+let plansLoadedAfterRecovery =
+  false;
+
+
+function setPlansAreaVisible(
+  visible
+){
+
+  const display =
+    visible
+      ? ""
+      : "none";
+
+
+  const title =
+    document.getElementById(
+      "plansTitle"
+    );
+
+  const plans =
+    document.getElementById(
+      "plans"
+    );
+
+  const note =
+    document.getElementById(
+      "plansNote"
+    );
+
+
+  if(title){
+    title.style.display =
+      display;
+  }
+
+  if(plans){
+    plans.style.display =
+      display;
+  }
+
+  if(note){
+    note.style.display =
+      display;
+  }
+
+}
+
+
+function readRecoveryForm(){
+
+  const name =
+    String(
+      document
+        .getElementById(
+          "customerName"
+        )
+        ?.value
+      ||
+      ""
+    )
+      .replace(
+        /\s+/g,
+        " "
+      )
+      .trim();
+
+
+  const phone =
+    String(
+      document
+        .getElementById(
+          "customerPhone"
+        )
+        ?.value
+      ||
+      ""
+    )
+      .trim();
+
+
+  const phoneDigits =
+    phone.replace(
+      /\D/g,
+      ""
+    );
+
+
+  const email =
+    String(
+      document
+        .getElementById(
+          "email"
+        )
+        ?.value
+      ||
+      ""
+    )
+      .trim()
+      .toLowerCase();
+
+
+  const valid =
+    name.length >= 2
+    &&
+    phoneDigits.length >= 10
+    &&
+    phoneDigits.length <= 13
+    &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      .test(
+        email
+      );
+
+
+  return {
+    name,
+    phone,
+    phoneDigits,
+    email,
+    valid
+  };
+
+}
+
+
+async function ensurePlansAfterRecoveryMiss(){
+
+  if(
+    plansLoadedAfterRecovery
+  ){
+
+    setPlansAreaVisible(
+      true
+    );
+
+    return;
+  }
+
+
+  plansLoadedAfterRecovery =
+    true;
+
+
+  await loadPlans();
+
+
+  setPlansAreaVisible(
+    true
+  );
+
+}
+
+
+async function recoverExistingAccessSilently(){
+
+  if(
+    silentRecoveryInFlight
+    ||
+    currentOrder
+  ){
+    return false;
+  }
+
+
+  const form =
+    readRecoveryForm();
+
+
+  if(
+    !form.valid
+  ){
+    return false;
+  }
+
+
+  const attemptKey =
+    [
+      form.name.toLowerCase(),
+      form.phoneDigits,
+      form.email,
+      eventKey || "",
+      routerKey || "",
+      mac || "",
+      ip || ""
+    ].join(
+      "|"
+    );
+
+
+  if(
+    attemptKey ===
+    silentRecoveryLastKey
+  ){
+    return false;
+  }
+
+
+  silentRecoveryLastKey =
+    attemptKey;
+
+  silentRecoveryInFlight =
+    true;
+
+
+  try{
+
+    const response =
+      await fetch(
+        "/api/access/recover",
+        {
+          method:
+            "POST",
+
+          headers:{
+            "Content-Type":
+              "application/json"
+          },
+
+          body:
+            JSON.stringify({
+
+              client_id:
+                clientId,
+
+              customer_name:
+                form.name,
+
+              phone:
+                form.phone,
+
+              email:
+                form.email,
+
+              mac,
+
+              ip,
+
+              event_key:
+                eventKey,
+
+              router_key:
+                routerKey
+
+            })
+        }
+      );
+
+
+    const data =
+      await response
+        .json()
+        .catch(
+          () => ({})
+        );
+
+
+    if(
+      !response.ok
+      ||
+      !data.ok
+    ){
+
+      console.warn(
+        "RECOVERY V16.14: backend recusou a tentativa silenciosa",
+        data.error || response.status
+      );
+
+      // Em erro de comunicacao/validacao nao exibimos planos por
+      // engano. O cliente pode corrigir os campos e tentar de novo.
+      silentRecoveryLastKey =
+        "";
+
+      return false;
+    }
+
+
+    if(
+      !data.active
+      ||
+      data.recovered === false
+    ){
+
+      await ensurePlansAfterRecoveryMiss();
+
+      return false;
+    }
+
+
+    if(
+      data.router_id
+    ){
+
+      currentRouterId =
+        Number(
+          data.router_id
+        );
+
+    }
+
+
+    if(
+      data.router_key
+    ){
+
+      currentRouterKey =
+        data.router_key;
+
+    }
+
+
+    currentOrder =
+      data.order;
+
+
+    lockCustomerFields();
+
+    setPlansAreaVisible(
+      false
+    );
+
+
+    showExistingAccess(
+      data
+    );
+
+
+    if(
+      data.grant_status !==
+      "active"
+    ){
+
+      poll();
+
+    }
+
+
+    console.log(
+      "RECOVERY V16.14: acesso recuperado silenciosamente",
+      data.order || ""
+    );
+
+
+    return true;
+
+  }
+
+  catch(error){
+
+    console.warn(
+      "RECOVERY V16.14: falha de comunicacao",
+      error
+    );
+
+    silentRecoveryLastKey =
+      "";
+
+    return false;
+
+  }
+
+  finally{
+
+    silentRecoveryInFlight =
+      false;
+
+  }
+
+}
+
+
+function scheduleSilentRecovery(){
+
+  if(
+    currentOrder
+  ){
+    return;
+  }
+
+
+  clearTimeout(
+    silentRecoveryTimer
+  );
+
+
+  const form =
+    readRecoveryForm();
+
+
+  if(
+    !form.valid
+  ){
+
+    // Enquanto o cadastro ainda esta incompleto, os planos
+    // permanecem escondidos para nao sugerir uma nova compra.
+    setPlansAreaVisible(
+      false
+    );
+
+    return;
+  }
+
+
+  silentRecoveryTimer =
+    setTimeout(
+      () => {
+        recoverExistingAccessSilently();
+      },
+      650
+    );
+
+}
+
+
+function installSilentRecoveryListeners(){
+
+  [
+    "customerName",
+    "customerPhone",
+    "email"
+  ].forEach(
+    id => {
+
+      const field =
+        document.getElementById(
+          id
+        );
+
+
+      if(
+        !field
+        ||
+        field.dataset.silentRecoveryBound ===
+          "1"
+      ){
+        return;
+      }
+
+
+      field.dataset.silentRecoveryBound =
+        "1";
+
+
+      field.addEventListener(
+        "input",
+        scheduleSilentRecovery
+      );
+
+
+      field.addEventListener(
+        "change",
+        scheduleSilentRecovery
+      );
+
+
+      field.addEventListener(
+        "blur",
+        scheduleSilentRecovery
+      );
+
+    }
+  );
+
+
+  // Autofill de Safari/Android pode preencher sem disparar
+  // imediatamente um evento de input. Fazemos algumas checagens
+  // curtas sem criar polling permanente.
+  [
+    250,
+    900,
+    1800
+  ].forEach(
+    delay => {
+
+      setTimeout(
+        scheduleSilentRecovery,
+        delay
+      );
+
+    }
+  );
 
 }
 
@@ -6069,10 +6579,23 @@ async function startPortal(){
   // ==========================================================
   // 3. SEM PLANO ATIVO E SEM PIX PENDENTE
   //
-  // Mostrar os planos normalmente.
+  // V16.14:
+  // NAO mostramos os planos ainda. Primeiro aguardamos o cadastro
+  // normal (nome + telefone + e-mail) e tentamos recuperar o plano
+  // pago silenciosamente. Somente se nao existir acesso valido os
+  // planos sao carregados/exibidos.
   // ==========================================================
 
-  await loadPlans();
+  setPlansAreaVisible(
+    false
+  );
+
+
+  installSilentRecoveryListeners();
+
+
+  // Caso o navegador ja tenha preenchido os campos por autofill.
+  scheduleSilentRecovery();
 
 }
 
