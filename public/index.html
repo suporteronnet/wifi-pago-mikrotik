@@ -3248,7 +3248,7 @@ function splitPlanRate(rate){
 
 
 // ============================================================
-// V16.14 - RECUPERACAO SILENCIOSA ANTES DE MOSTRAR PLANOS
+// V16.16 - PLANOS IMEDIATOS + RECUPERACAO SILENCIOSA
 //
 // Fluxo:
 // 1. client_id / cookie continuam sendo tentados primeiro por
@@ -3258,7 +3258,7 @@ function splitPlanRate(rate){
 //    /api/access/recover automaticamente.
 // 4. Se o pagamento ainda estiver ativo, migramos o acesso para
 //    este client_id / MAC / IP e NAO mostramos os planos.
-// 5. Se nao houver plano ativo, somente entao mostramos os planos.
+// 5. Os planos permanecem visiveis enquanto a recuperacao nao encontra acesso.
 //
 // Nao existe botao "recuperar acesso".
 // ============================================================
@@ -3664,12 +3664,9 @@ function scheduleSilentRecovery(){
     !form.valid
   ){
 
-    // Enquanto o cadastro ainda esta incompleto, os planos
-    // permanecem escondidos para nao sugerir uma nova compra.
-    setPlansAreaVisible(
-      false
-    );
-
+    // V16.16:
+    // Os planos ficam visiveis desde a abertura do portal.
+    // A recuperacao silenciosa so aguarda os dados ficarem validos.
     return;
   }
 
@@ -6590,22 +6587,32 @@ async function startPortal(){
   // ==========================================================
   // 3. SEM PLANO ATIVO E SEM PIX PENDENTE
   //
-  // V16.14:
-  // NAO mostramos os planos ainda. Primeiro aguardamos o cadastro
-  // normal (nome + telefone + e-mail) e tentamos recuperar o plano
-  // pago silenciosamente. Somente se nao existir acesso valido os
-  // planos sao carregados/exibidos.
+  // V16.16 - PLANOS VISIVEIS IMEDIATAMENTE
+  //
+  // Voltamos ao comportamento antigo:
+  // - os planos aparecem assim que o portal abre;
+  // - nome / telefone / e-mail continuam obrigatorios somente
+  //   quando o cliente escolhe um plano;
+  // - a recuperacao silenciosa continua funcionando em paralelo;
+  // - se encontrar um plano ativo, os planos sao ocultados e o
+  //   acesso existente e reaplicado sem gerar novo PIX.
   // ==========================================================
 
+  await loadPlans();
+
+  plansLoadedAfterRecovery =
+    true;
+
   setPlansAreaVisible(
-    false
+    true
   );
 
 
   installSilentRecoveryListeners();
 
 
-  // Caso o navegador ja tenha preenchido os campos por autofill.
+  // Caso o navegador ja tenha preenchido os campos por autofill,
+  // ainda tentamos recuperar o acesso antigo automaticamente.
   scheduleSilentRecovery();
 
 }
