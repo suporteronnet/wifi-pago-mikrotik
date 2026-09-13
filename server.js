@@ -6351,95 +6351,6 @@ function normalizeCustomerName(
 }
 
 
-// ============================================================
-// V16.12 - DADOS DE RECUPERACAO TAMBEM NO PEDIDO
-//
-// O pedido pago passa a manter uma copia do nome/telefone/e-mail.
-// Isso evita depender exclusivamente da ligacao com customers pelo
-// client_id antigo depois de "Esquecer rede" / troca de MAC privado.
-// ============================================================
-
-function ensureOrderRecoveryColumns() {
-
-  const columns =
-    db.prepare(
-      "PRAGMA table_info(orders)"
-    ).all();
-
-  const names =
-    new Set(
-      columns.map(
-        column => column.name
-      )
-    );
-
-  if(!names.has("customer_name")) {
-    db.exec(
-      "ALTER TABLE orders ADD COLUMN customer_name TEXT"
-    );
-  }
-
-  if(!names.has("customer_phone")) {
-    db.exec(
-      "ALTER TABLE orders ADD COLUMN customer_phone TEXT"
-    );
-  }
-
-  if(!names.has("customer_email")) {
-    db.exec(
-      "ALTER TABLE orders ADD COLUMN customer_email TEXT"
-    );
-  }
-
-  // Backfill seguro para compras já existentes.
-  db.exec(`
-    UPDATE orders
-    SET customer_email=COALESCE(
-      NULLIF(customer_email,''),
-      NULLIF(payer_email,''),
-      (
-        SELECT c.email
-        FROM customers c
-        WHERE c.client_id=orders.client_id
-        LIMIT 1
-      )
-    )
-    WHERE customer_email IS NULL OR TRIM(customer_email)=''
-  `);
-
-  db.exec(`
-    UPDATE orders
-    SET customer_phone=COALESCE(
-      NULLIF(customer_phone,''),
-      (
-        SELECT c.phone
-        FROM customers c
-        WHERE c.client_id=orders.client_id
-        LIMIT 1
-      )
-    )
-    WHERE customer_phone IS NULL OR TRIM(customer_phone)=''
-  `);
-
-  db.exec(`
-    UPDATE orders
-    SET customer_name=COALESCE(
-      NULLIF(customer_name,''),
-      (
-        SELECT c.name
-        FROM customers c
-        WHERE c.client_id=orders.client_id
-        LIMIT 1
-      )
-    )
-    WHERE customer_name IS NULL OR TRIM(customer_name)=''
-  `);
-
-}
-
-ensureOrderRecoveryColumns();
-
-
 function normalizeCustomerPhone(
   value
 ) {
@@ -6642,32 +6553,16 @@ function findActivePaidAccess(
 
 
 // ============================================================
-// V16.13 - RECUPERAR ACESSO PAGO POR TELEFONE + E-MAIL
+// V16.4 - RECUPERAR ACESSO PAGO POR TELEFONE + E-MAIL
 //
-// CORRECOES:
+// Usado quando o navegador cativo perdeu o client_id após uma
+// troca de MAC privado.
 //
-// 1. Funciona com pedidos atuais.
-//
-// 2. Compatibilidade com pedidos antigos que ainda nao tinham
-//    access_expires_at gravado.
-//
-// 3. Para pedido antigo:
-//    vencimento = approved_at + minutes.
-//
-// 4. NUNCA reinicia o tempo do plano.
-//
-// 5. NUNCA adiciona minutos novos.
-//
-// 6. Exige mesmo evento.
-//
-// 7. Prioriza telefone + e-mail.
-//
-// 8. Usa payer_email como compatibilidade para compras antigas.
-//
-// 9. Se houver mais de um candidato ambiguo, NAO libera.
-//
-// 10. Gera logs detalhados no Railway para sabermos exatamente
-//     por que uma recuperacao foi aceita ou recusada.
+// Segurança:
+// - exige telefone E e-mail válidos;
+// - considera somente plano pago ainda ativo;
+// - restringe ao mesmo evento;
+// - não reinicia o relógio do plano.
 // ============================================================
 
 function findActivePaidAccessByContact(
@@ -6682,18 +6577,15 @@ function findActivePaidAccessByContact(
       phone
     );
 
-
   const normalizedEmail =
     normalizeCustomerEmail(
       email
     );
 
-
   const normalizedName =
     normalizeCustomerName(
       name
     );
-
 
   if(
     !normalizedPhone
@@ -6712,30 +6604,16 @@ function findActivePaidAccessByContact(
 
   }
 
-
   const nowMs =
     Date.now();
-
-
-  // ==========================================================
-  // BUSCAR POSSIVEIS PEDIDOS PAGOS DO MESMO EVENTO
-  //
-  // Importante:
-  // nao exigimos access_expires_at na SQL porque pedidos
-  // antigos podem nao ter esse campo preenchido.
-  // ==========================================================
 
   const candidates =
     db.prepare(`
 
       SELECT
-
         o.*,
-
         c.name AS profile_name,
-
         c.phone AS profile_phone,
-
         c.email AS profile_email
 
       FROM orders o
@@ -6744,16 +6622,12 @@ function findActivePaidAccessByContact(
         ON c.client_id=o.client_id
 
       WHERE
-
         o.event_id=?
-
         AND o.status IN (
           'approved',
           'approved_pending_router'
         )
-
         AND o.approved_at IS NOT NULL
-
         AND o.access_expired_at IS NULL
 
       ORDER BY
@@ -6765,98 +6639,47 @@ function findActivePaidAccessByContact(
       eventId
     );
 
-
   console.log(
     "RECOVERY V16.13: candidatos",
     "EVENTO=" + eventId,
     "TOTAL=" + candidates.length
   );
 
-
   const validMatches = [];
-
 
   for(
     const candidate
     of candidates
   ) {
 
-    // ========================================================
-    // E-MAIL
-    // ========================================================
-
     const candidateEmail =
       normalizeCustomerEmail(
-
         candidate.customer_email
-
         ||
-
         candidate.payer_email
-
         ||
-
         candidate.profile_email
-
         ||
-
         ""
-
       );
-
-
-    // ========================================================
-    // TELEFONE
-    // ========================================================
 
     const candidatePhone =
       normalizeCustomerPhone(
-
         candidate.customer_phone
-
         ||
-
         candidate.profile_phone
-
         ||
-
         ""
-
       );
-
-
-    // ========================================================
-    // NOME
-    // ========================================================
 
     const candidateName =
       normalizeCustomerName(
-
         candidate.customer_name
-
         ||
-
         candidate.profile_name
-
         ||
-
         ""
-
       );
-
-
-    // ========================================================
-    // CALCULAR VENCIMENTO REAL
-    //
-    // 1. Usa access_expires_at se existir.
-    //
-    // 2. Para registros antigos:
-    //    approved_at + minutes.
-    //
-    // Isso NAO cria novo tempo.
-    // Apenas reconstrói o vencimento que o pedido originalmente
-    // deveria possuir.
-    // ========================================================
 
     let expiresMs =
       Date.parse(
@@ -6865,10 +6688,8 @@ function findActivePaidAccessByContact(
         ""
       );
 
-
     let reconstructedExpiration =
       false;
-
 
     if(
       !Number.isFinite(
@@ -6883,14 +6704,12 @@ function findActivePaidAccessByContact(
           ""
         );
 
-
       const minutes =
         Number(
           candidate.minutes
           ||
           0
         );
-
 
       if(
         Number.isFinite(
@@ -6915,18 +6734,12 @@ function findActivePaidAccessByContact(
             1000
           );
 
-
         reconstructedExpiration =
           true;
 
       }
 
     }
-
-
-    // ========================================================
-    // SEM VENCIMENTO CONFIAVEL
-    // ========================================================
 
     if(
       !Number.isFinite(
@@ -6942,11 +6755,6 @@ function findActivePaidAccessByContact(
       continue;
 
     }
-
-
-    // ========================================================
-    // PLANO JA VENCEU
-    // ========================================================
 
     if(
       expiresMs <=
@@ -6966,11 +6774,6 @@ function findActivePaidAccessByContact(
 
     }
 
-
-    // ========================================================
-    // VALIDAR E-MAIL
-    // ========================================================
-
     if(
       !candidateEmail
       ||
@@ -6986,13 +6789,6 @@ function findActivePaidAccessByContact(
       continue;
 
     }
-
-
-    // ========================================================
-    // VALIDAR TELEFONE
-    //
-    // Se o pedido antigo possui telefone, TEM que coincidir.
-    // ========================================================
 
     if(
       candidatePhone
@@ -7010,13 +6806,6 @@ function findActivePaidAccessByContact(
 
     }
 
-
-    // ========================================================
-    // PEDIDO MUITO ANTIGO SEM TELEFONE
-    //
-    // Exigimos nome também, quando ele estiver disponível.
-    // ========================================================
-
     if(
       !candidatePhone
       &&
@@ -7026,11 +6815,9 @@ function findActivePaidAccessByContact(
       if(
         !normalizedName
         ||
-        candidateName
-          .toLowerCase()
+        candidateName.toLowerCase()
         !==
-        normalizedName
-          .toLowerCase()
+        normalizedName.toLowerCase()
       ) {
 
         console.log(
@@ -7044,17 +6831,11 @@ function findActivePaidAccessByContact(
 
     }
 
-
     validMatches.push({
-
       candidate,
-
       expiresMs,
-
       reconstructedExpiration
-
     });
-
 
     console.log(
       "RECOVERY V16.13: candidato valido",
@@ -7068,13 +6849,6 @@ function findActivePaidAccessByContact(
     );
 
   }
-
-
-  // ==========================================================
-  // SEGURANCA CONTRA AMBIGUIDADE
-  //
-  // Nao podemos escolher aleatoriamente entre dois acessos.
-  // ==========================================================
 
   if(
     validMatches.length !==
@@ -7091,31 +6865,11 @@ function findActivePaidAccessByContact(
 
   }
 
-
   const match =
     validMatches[0];
 
-
   const candidate =
     match.candidate;
-
-
-  // ==========================================================
-  // PEDIDO LEGADO:
-  // GRAVAR O VENCIMENTO RECONSTRUIDO
-  //
-  // Isto NAO muda o inicio e NAO reinicia o plano.
-  //
-  // Exemplo:
-  //
-  // aprovado 18:00
-  // plano 60 min
-  //
-  // access_expires_at = 19:00
-  //
-  // Mesmo que a recuperacao aconteca 18:40,
-  // continua vencendo 19:00.
-  // ==========================================================
 
   if(
     match.reconstructedExpiration
@@ -7127,7 +6881,6 @@ function findActivePaidAccessByContact(
       new Date(
         match.expiresMs
       ).toISOString();
-
 
     db.prepare(`
 
@@ -7149,10 +6902,8 @@ function findActivePaidAccessByContact(
       candidate.id
     );
 
-
     candidate.access_expires_at =
       reconstructedIso;
-
 
     console.log(
       "RECOVERY V16.13: vencimento legado reconstruido",
@@ -7162,6 +6913,28 @@ function findActivePaidAccessByContact(
 
   }
 
+  candidate.recovery_customer_name =
+    candidate.customer_name
+    ||
+    candidate.profile_name
+    ||
+    "";
+
+  candidate.recovery_customer_phone =
+    candidate.customer_phone
+    ||
+    candidate.profile_phone
+    ||
+    "";
+
+  candidate.recovery_customer_email =
+    candidate.customer_email
+    ||
+    candidate.profile_email
+    ||
+    candidate.payer_email
+    ||
+    "";
 
   console.log(
     "RECOVERY V16.13: ACESSO ENCONTRADO",
@@ -7179,7 +6952,6 @@ function findActivePaidAccessByContact(
         ""
       )
   );
-
 
   return candidate;
 
@@ -8001,6 +7773,182 @@ app.post(
 
 
       // ======================================================
+      // V16.17 - MIGRACAO AUTOMATICA DA IDENTIDADE ANTIGA
+      //
+      // Quando o DEVICE_ID persistente foi restaurado, o portal
+      // pode enviar também o client_id antigo que ainda estava
+      // salvo no navegador do dominio Railway.
+      //
+      // Se esse client_id antigo possui um plano pago ainda ativo
+      // no MESMO evento, o direito de acesso e migrado uma unica
+      // vez para o DEVICE_ID atual.
+      //
+      // Isso evita pedir nome/telefone/e-mail para clientes que
+      // ja pagaram antes da restauracao do DEVICE_ID.
+      // ======================================================
+
+      let recoveredByLegacyIdentity =
+        false;
+
+      const normalizedLegacyClientId =
+        normalizeClientId(
+          req.body?.legacy_client_id
+        );
+
+
+      if(
+        !activeOrder
+        &&
+        normalizedLegacyClientId
+        &&
+        normalizedLegacyClientId !==
+          normalizedClientId
+      ) {
+
+        const legacyOrder =
+          findActivePaidAccess(
+            context.event.id,
+            normalizedLegacyClientId
+          );
+
+
+        if(
+          legacyOrder
+        ) {
+
+          const legacyCustomer =
+            db.prepare(`
+
+              SELECT *
+
+              FROM customers
+
+              WHERE client_id=?
+
+              LIMIT 1
+
+            `).get(
+              normalizedLegacyClientId
+            ) || null;
+
+
+          const migrationNow =
+            nowIso();
+
+
+          const migrateLegacyIdentity =
+            db.transaction(
+              () => {
+
+                if(
+                  legacyCustomer
+                ) {
+
+                  upsertCustomerProfile({
+                    clientId:
+                      normalizedClientId,
+                    name:
+                      legacyCustomer.name || "",
+                    phone:
+                      legacyCustomer.phone || "",
+                    email:
+                      legacyCustomer.email || ""
+                  });
+
+                }
+
+
+                db.prepare(`
+
+                  UPDATE orders
+
+                  SET
+                    client_id=?,
+                    effective_mac=?,
+                    ip=?,
+                    portal_last_seen_at=?
+
+                  WHERE id=?
+
+                `).run(
+                  normalizedClientId,
+                  normalizedMac,
+                  normalizedIp,
+                  migrationNow,
+                  legacyOrder.id
+                );
+
+
+                db.prepare(`
+
+                  UPDATE router_access_grants
+
+                  SET
+                    client_id=?,
+                    updated_at=?
+
+                  WHERE order_id=?
+
+                `).run(
+                  normalizedClientId,
+                  migrationNow,
+                  legacyOrder.id
+                );
+
+              }
+            );
+
+
+          migrateLegacyIdentity();
+
+
+          activeOrder =
+            db.prepare(`
+
+              SELECT *
+
+              FROM orders
+
+              WHERE id=?
+
+              LIMIT 1
+
+            `).get(
+              legacyOrder.id
+            ) || null;
+
+
+          recoveredByLegacyIdentity =
+            Boolean(
+              activeOrder
+            );
+
+
+          if(
+            recoveredByLegacyIdentity
+          ) {
+
+            console.log(
+              "V16.17 DEVICE_ID MIGRATION:",
+              activeOrder.external_ref,
+              "CLIENT_ANTIGO=" +
+                normalizedLegacyClientId,
+              "CLIENT_NOVO=" +
+                normalizedClientId,
+              "MAC_NOVO=" +
+                String(
+                  normalizedMac || ""
+                )
+            );
+
+          }
+
+        }
+
+      }
+
+
+      // ======================================================
       // V16.11 - RECUPERACAO AUTOMATICA VIA COOKIE HTTPONLY
       //
       // Se o captive portal perdeu o client_id JS e criou outro,
@@ -8193,6 +8141,9 @@ app.post(
         recovered_by_cookie:
           recoveredByCookie,
 
+        recovered_by_legacy_identity:
+          recoveredByLegacyIdentity,
+
         ...buildActiveAccessResponse(
           activeOrder,
           context.router,
@@ -8373,7 +8324,9 @@ app.post(
           context.event.id,
           normalizedPhone,
           normalizedEmail,
-          normalizeCustomerName(req.body?.customer_name || "")
+          normalizeCustomerName(
+            req.body?.customer_name || ""
+          )
         );
 
 
@@ -9467,12 +9420,6 @@ app.post(
 
             payer_email,
 
-            customer_name,
-
-            customer_phone,
-
-            customer_email,
-
             mp_payment_id,
 
             mp_order_id,
@@ -9493,7 +9440,7 @@ app.post(
 
           VALUES (
 
-            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
+            ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?
 
           )
 
@@ -9524,12 +9471,6 @@ app.post(
           normalizedIp,
 
           payerEmail,
-
-          normalizedCustomerName,
-
-          normalizedCustomerPhone,
-
-          normalizedCustomerEmail,
 
           String(
 
@@ -10706,6 +10647,7 @@ app.get(
 
 // ============================================================
 // FIM DO BLOCO 5/10
+
 
 // ============================================================
 // BLOCO 6/10 - WEBHOOK MP + FILA MIKROTIK
