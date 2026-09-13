@@ -1708,7 +1708,7 @@ const routerKey =
 
 
 // ============================================================
-// V16.15 - IDENTIDADE PERSISTENTE RESTAURADA
+// V16.17 - IDENTIDADE PERSISTENTE + MIGRACAO DO CLIENT_ID ANTIGO
 //
 // O login.html da MikroTik cria um DEVICE_ID persistente no
 // domínio local do HotSpot e o envia para o portal por querystring.
@@ -1851,6 +1851,89 @@ function saveClientIdCookie(value){
 
 }
 
+
+
+// ============================================================
+// V16.17 - PRESERVAR IDENTIDADE ANTERIOR ANTES DO DEVICE_ID
+//
+// Antes de o DEVICE_ID assumir como client_id principal,
+// guardamos o client_id que já existia no portal.
+// Ele é enviado apenas para /api/access/check para permitir
+// ao backend migrar um plano ativo antigo para o DEVICE_ID.
+//
+// Depois que a migração acontece, o DEVICE_ID passa a ser a
+// identidade definitiva e o tempo original do plano é mantido.
+// ============================================================
+
+function getLegacyClientIdBeforeDeviceMigration(){
+
+  const key =
+    "wifi_pago_client_id";
+
+  let localValue =
+    "";
+
+  let cookieValue =
+    "";
+
+  try{
+
+    localValue =
+      String(
+        localStorage.getItem(
+          key
+        )
+        ||
+        ""
+      ).trim();
+
+  }
+  catch(error){
+  }
+
+  cookieValue =
+    String(
+      getCookieValue(
+        key
+      )
+      ||
+      ""
+    ).trim();
+
+  const previousValue =
+    (
+      localValue
+      ||
+      cookieValue
+      ||
+      ""
+    )
+      .replace(
+        /[^a-zA-Z0-9_-]/g,
+        ""
+      )
+      .slice(
+        0,
+        100
+      );
+
+  if(
+    !previousValue
+    ||
+    previousValue === hotspotDeviceId
+  ){
+
+    return "";
+
+  }
+
+  return previousValue;
+
+}
+
+
+const legacyClientId =
+  getLegacyClientIdBeforeDeviceMigration();
 
 function getClientId(){
 
@@ -3062,6 +3145,9 @@ async function checkExistingAccess(){
 
               client_id:
                 clientId,
+
+              legacy_client_id:
+                legacyClientId,
 
               mac,
 
