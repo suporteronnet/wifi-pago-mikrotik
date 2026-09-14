@@ -14,6 +14,107 @@ require("dotenv").config();
 
 const app = express();
 
+// Railway encaminha as requisicoes por um proxy confiavel.
+// Configure TRUST_PROXY_HOPS=0 quando executar sem proxy reverso.
+const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 1);
+if (!Number.isInteger(trustProxyHops) || trustProxyHops < 0 || trustProxyHops > 5) {
+  throw new Error("TRUST_PROXY_HOPS deve ser um inteiro entre 0 e 5");
+}
+app.set("trust proxy", trustProxyHops);
+
+const missingRequiredEnv = ["ADMIN_USER", "ADMIN_PASSWORD", "MP_ACCESS_TOKEN", "MP_WEBHOOK_SECRET"]
+  .filter(name => !String(process.env[name] || "").trim());
+
+if (process.env.NODE_ENV === "production" && missingRequiredEnv.length) {
+  throw new Error(
+    `Configure as variaveis obrigatorias antes de iniciar: ${missingRequiredEnv.join(", ")}`
+  );
+}
+
+if (missingRequiredEnv.length) {
+  console.warn(
+    `Configuracao incompleta para producao: ${missingRequiredEnv.join(", ")}`
+  );
+}
+
+const adminUser = String(process.env.ADMIN_USER || "admin").trim();
+const adminPassword = String(process.env.ADMIN_PASSWORD || "").trim();
+if (
+  adminPassword
+  && ["troque-esta-senha", "281533", "admin", "password"].includes(adminPassword.toLowerCase())
+) {
+  throw new Error("ADMIN_PASSWORD usa uma senha padrao conhecida; defina uma senha forte");
+}
+
+const adminAuth = basicAuth({
+  users: {
+    [adminUser]: adminPassword || crypto.randomBytes(32).toString("hex")
+  },
+  challenge: true
+});
+
+const rateLimitBuckets = new Map();
+
+function createRateLimiter({ windowMs, max, keyFor, message }) {
+  return (req, res, next) => {
+    const identity = String(keyFor(req) || "").trim();
+    if (!identity) {
+      return res.status(400).json({ ok: false, error: "Identificador de cliente invalido" });
+    }
+
+    const key = `${req.baseUrl}${req.path}:${identity}`;
+    const now = Date.now();
+    let bucket = rateLimitBuckets.get(key);
+    if (!bucket || bucket.resetAt <= now) {
+      bucket = { count: 0, resetAt: now + windowMs };
+      rateLimitBuckets.set(key, bucket);
+    }
+
+    bucket.count += 1;
+    res.setHeader("RateLimit-Limit", String(max));
+    res.setHeader("RateLimit-Remaining", String(Math.max(0, max - bucket.count)));
+    res.setHeader("RateLimit-Reset", String(Math.ceil(bucket.resetAt / 1000)));
+
+    if (bucket.count > max) {
+      res.setHeader("Retry-After", String(Math.max(1, Math.ceil((bucket.resetAt - now) / 1000))));
+      return res.status(429).json({ ok: false, error: message });
+    }
+
+    if (rateLimitBuckets.size > 10000) {
+      for (const [bucketKey, value] of rateLimitBuckets) {
+        if (value.resetAt <= now) rateLimitBuckets.delete(bucketKey);
+      }
+    }
+
+    return next();
+  };
+}
+
+const limitPixByIp = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  keyFor: req => req.ip,
+  message: "Muitas tentativas de pagamento. Aguarde um minuto."
+});
+const limitPixByClient = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 5,
+  keyFor: req => req.body?.client_id,
+  message: "Este aparelho gerou muitos PIX. Aguarde um minuto."
+});
+const limitRecoveryByIp = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  keyFor: req => req.ip,
+  message: "Muitas tentativas de recuperacao. Aguarde 15 minutos."
+});
+const limitRecoveryByClient = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  keyFor: req => req.body?.client_id,
+  message: "Muitas tentativas de recuperacao para este aparelho."
+});
+
 
 // ============================================================
 // V15.7 - CORS DO PORTAL LOCAL MIKROTIK
@@ -122,16 +223,6 @@ app.use(
   })
 );
 
-app.use(
-  express.static(
-    path.join(
-      __dirname,
-      "public"
-    )
-  )
-);
-
-
 // ============================================================
 // CONFIGURAÇÕES GERAIS
 // ============================================================
@@ -177,6 +268,20 @@ db.pragma(
 db.pragma(
   "foreign_keys = ON"
 );
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS admin_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor TEXT NOT NULL,
+    method TEXT NOT NULL,
+    route TEXT NOT NULL,
+    status_code INTEGER NOT NULL,
+    ip TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created_at
+    ON admin_audit_log(created_at DESC);
+`);
 
 
 // ============================================================
@@ -3165,36 +3270,6 @@ function logMikrotikAuthentication(
 // ADMIN_PASSWORD
 // ============================================================
 
-const adminAuth =
-
-  basicAuth({
-
-    users: {
-
-      [
-
-        process.env.ADMIN_USER
-
-        ||
-
-        "admin"
-
-      ]:
-
-        process.env.ADMIN_PASSWORD
-
-        ||
-
-        "troque-esta-senha"
-
-    },
-
-    challenge:
-      true
-
-  });
-
-
 // ============================================================
 // V15 - FUNIL: REGISTRADOR CENTRAL
 // ============================================================
@@ -4447,6 +4522,49 @@ function getTemporaryAccessDecision(
 // ============================================================
 // HEALTH
 // ============================================================
+
+app.use((req, res, next) => {
+  res.on("finish", () => {
+    const method = String(req.method || "").toUpperCase();
+    const actor = req.auth?.user;
+    if (
+      !actor
+      || !req.path.startsWith("/admin/api/")
+      || !["POST", "PUT", "PATCH", "DELETE"].includes(method)
+    ) {
+      return;
+    }
+
+    const route = String(req.baseUrl || "") + String(req.route?.path || req.path);
+    try {
+      const result = db.prepare(`
+        INSERT INTO admin_audit_log (
+          actor, method, route, status_code, ip, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        String(actor).slice(0, 100),
+        method,
+        route.slice(0, 300),
+        Number(res.statusCode || 0),
+        String(req.ip || "").slice(0, 100),
+        nowIso()
+      );
+
+      if (Number(result.lastInsertRowid) % 250 === 0) {
+        db.prepare(`
+          DELETE FROM admin_audit_log
+          WHERE id NOT IN (
+            SELECT id FROM admin_audit_log ORDER BY id DESC LIMIT 5000
+          )
+        `).run();
+      }
+    } catch (error) {
+      console.error("Falha ao registrar auditoria administrativa:", error.message);
+    }
+  });
+
+  next();
+});
 
 app.get(
   "/health",
@@ -8210,6 +8328,8 @@ app.post(
 
 app.post(
   "/api/access/recover",
+  limitRecoveryByIp,
+  limitRecoveryByClient,
   (req, res) => {
 
     try {
@@ -8505,6 +8625,8 @@ app.post(
 
 app.post(
   "/api/pix",
+  limitPixByIp,
+  limitPixByClient,
   async (req, res) => {
 
     try {
@@ -17811,6 +17933,32 @@ app.get(
 // ============================================================
 
 app.get(
+  "/admin/api/audit",
+  adminAuth,
+  (req, res) => {
+    const requestedLimit = Number(req.query.limit || 50);
+    const limit = Math.max(
+      1,
+      Math.min(200, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50)
+    );
+
+    try {
+      const entries = db.prepare(`
+        SELECT id, actor, method, route, status_code, ip, created_at
+        FROM admin_audit_log
+        ORDER BY id DESC
+        LIMIT ?
+      `).all(limit);
+
+      return res.json({ ok: true, entries });
+    } catch (error) {
+      console.error("Erro ao carregar auditoria administrativa:", error.message);
+      return res.status(500).json({ ok: false, error: "Erro ao carregar auditoria" });
+    }
+  }
+);
+
+app.get(
   "/admin/api/orders",
   adminAuth,
   (req, res) => {
@@ -17907,7 +18055,7 @@ app.get(
 // ============================================================
 
 app.get(
-  "/admin/api/funnel/summary",
+  "/admin/api/funnel/summary-advanced",
   adminAuth,
   (req, res) => {
 
@@ -18483,6 +18631,16 @@ app.get(
     );
 
   }
+);
+
+app.get(
+  "/admin.html",
+  adminAuth,
+  (req, res) => res.sendFile(path.join(__dirname, "public", "admin.html"))
+);
+
+app.use(
+  express.static(path.join(__dirname, "public"))
 );
 
 

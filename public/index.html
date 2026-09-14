@@ -3325,9 +3325,9 @@ function splitPlanRate(rate){
 
   return {
     download:
-      parts[0] || raw || "-",
+      escapeHtml(parts[0] || raw || "-"),
     upload:
-      parts[1] || "-"
+      escapeHtml(parts[1] || "-")
   };
 
 }
@@ -3843,6 +3843,15 @@ function installSilentRecoveryListeners(){
 // PLANOS DO EVENTO
 // ============================================================
 
+function escapeHtml(value){
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 async function loadPlans(){
 
   try{
@@ -4005,7 +4014,7 @@ async function loadPlans(){
             <div class="plan-title">
 
               <h2>
-                ${p.name}
+                ${escapeHtml(p.name)}
               </h2>
 
               <div class="plan-duration">
@@ -4047,7 +4056,7 @@ async function loadPlans(){
 
           <button
             class="pay-button"
-            onclick="buy('${p.id}','${p.name}')"
+            data-plan-index="${index}"
           >
             ESCOLHER PLANO ›
           </button>
@@ -4059,6 +4068,17 @@ async function loadPlans(){
         }
 
       ).join("");
+
+    container
+      .querySelectorAll("[data-plan-index]")
+      .forEach(button => {
+        button.addEventListener("click", () => {
+          const selectedPlan = plans[Number(button.dataset.planIndex)];
+          if (selectedPlan) {
+            buy(selectedPlan.id, selectedPlan.name);
+          }
+        });
+      });
 
   }
   catch(error){
@@ -4082,7 +4102,7 @@ async function loadPlans(){
           </h2>
 
           <div class="muted">
-            ${error.message || "Tente novamente."}
+            ${escapeHtml(error.message || "Tente novamente.")}
           </div>
 
         </div>

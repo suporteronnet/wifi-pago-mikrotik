@@ -2631,6 +2631,35 @@ tr:last-child td{
 
     </div>
 
+    <div class="section" style="margin-top:16px;">
+      <div class="section-header">
+        <div>
+          <h2>Auditoria administrativa</h2>
+          <div style="margin-top:4px;font-size:12px;color:#64748b;">
+            Acoes autenticadas de criacao, alteracao e remocao feitas no painel.
+          </div>
+        </div>
+        <span id="adminAuditCount" style="font-size:12px;color:#94a3b8;">0 acoes</span>
+      </div>
+      <div class="section-body">
+        <div class="table-wrap desktop-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Usuario</th>
+                <th>Acao</th>
+                <th>Resultado</th>
+                <th>IP</th>
+              </tr>
+            </thead>
+            <tbody id="adminAuditTable"></tbody>
+          </table>
+        </div>
+        <div class="mobile-orders" id="adminAuditMobile"></div>
+      </div>
+    </div>
+
   </div>
 
 
@@ -4589,6 +4618,7 @@ let eventsCache = [];
 
 
 let orders = [];
+let adminAudit = [];
 let funnelLogs = [];
 let devices = [];
 let eventDevices = [];
@@ -13567,9 +13597,10 @@ async function loadData(){
 
   try{
 
-    const [ordersResponse, funnelResponse] = await Promise.all([
+    const [ordersResponse, funnelResponse, auditResponse] = await Promise.all([
       fetch("/admin/api/orders", {cache:"no-store"}),
-      fetch("/admin/api/funnel/logs?limit=10000", {cache:"no-store"})
+      fetch("/admin/api/funnel/logs?limit=10000", {cache:"no-store"}),
+      fetch("/admin/api/audit?limit=100", {cache:"no-store"})
     ]);
 
     if(!ordersResponse.ok){
@@ -13579,6 +13610,14 @@ async function loadData(){
     orders = await ordersResponse.json();
     if(!Array.isArray(orders)){
       orders = [];
+    }
+
+    if(auditResponse.ok){
+      const auditData = await auditResponse.json().catch(() => ({}));
+      adminAudit = Array.isArray(auditData.entries) ? auditData.entries : [];
+    }else{
+      adminAudit = [];
+      console.warn("Auditoria administrativa ainda nao disponivel.");
     }
 
     funnelLogs = [];
@@ -13597,6 +13636,7 @@ async function loadData(){
     renderDashboardFunnel();
     applyPaymentsFilters();
     renderLogs();
+    renderAdminAudit();
     renderEvents();
 
     systemStatus.textContent = "Sistema online • dados atualizados";
@@ -18563,6 +18603,54 @@ function renderLogs(){
 // ============================================================
 // ÚLTIMAS MOVIMENTAÇÕES
 // ============================================================
+
+
+function renderAdminAudit(){
+  const entries = Array.isArray(adminAudit) ? adminAudit : [];
+  const count = document.getElementById("adminAuditCount");
+  const table = document.getElementById("adminAuditTable");
+  const mobile = document.getElementById("adminAuditMobile");
+
+  if(count){
+    count.textContent = `${entries.length} acoes recentes`;
+  }
+  if(!table || !mobile){
+    return;
+  }
+  if(entries.length === 0){
+    table.innerHTML = '<tr><td colspan="5">Nenhuma acao administrativa registrada.</td></tr>';
+    mobile.innerHTML = '<div class="loading">Nenhuma acao administrativa registrada.</div>';
+    return;
+  }
+
+  table.innerHTML = entries.map(entry => {
+    const status = Number(entry.status_code || 0);
+    const label = status >= 200 && status < 400 ? "Concluida" : `Falhou (${status})`;
+    return `
+      <tr>
+        <td>${escapeHtml(dateBR(entry.created_at))}</td>
+        <td>${escapeHtml(entry.actor || "-")}</td>
+        <td><strong>${escapeHtml(entry.method || "")}</strong> ${escapeHtml(entry.route || "")}</td>
+        <td>${escapeHtml(label)}</td>
+        <td>${escapeHtml(entry.ip || "-")}</td>
+      </tr>
+    `;
+  }).join("");
+
+  mobile.innerHTML = entries.map(entry => {
+    const status = Number(entry.status_code || 0);
+    const label = status >= 200 && status < 400 ? "Concluida" : `Falhou (${status})`;
+    return `
+      <div class="order-card">
+        <div style="color:#94a3b8;font-size:12px;">${escapeHtml(dateBR(entry.created_at))}</div>
+        <div style="margin-top:6px;font-weight:bold;">${escapeHtml(entry.method || "")} ${escapeHtml(entry.route || "")}</div>
+        <div class="order-row"><span class="order-label">Usuario</span><span class="order-value">${escapeHtml(entry.actor || "-")}</span></div>
+        <div class="order-row"><span class="order-label">Resultado</span><span class="order-value">${escapeHtml(label)}</span></div>
+        <div class="order-row"><span class="order-label">IP</span><span class="order-value">${escapeHtml(entry.ip || "-")}</span></div>
+      </div>
+    `;
+  }).join("");
+}
 
 
 function renderRecent(){

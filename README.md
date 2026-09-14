@@ -27,3 +27,17 @@ Edite modelo, RouterOS, WAN, portas Hotspot e rede, se necessário.
 Cadastre ou revise os planos.
 Clique em GERAR SCRIPT MIKROTIK.
 Copie o script e o `login.html` mostrados pelo painel.
+
+Variaveis obrigatorias em producao
+Configure no Railway (ou no ambiente de execucao) antes de publicar:
+
+```text
+ADMIN_USER
+ADMIN_PASSWORD
+MP_ACCESS_TOKEN
+MP_WEBHOOK_SECRET
+```
+
+Use uma senha administrativa forte; senhas padrao conhecidas fazem o servidor recusar a inicializacao. `TRUST_PROXY_HOPS` define quantos proxies confiaveis existem antes da aplicacao e assume `1` no Railway. Em acesso direto sem proxy reverso, configure `TRUST_PROXY_HOPS=0`.
+
+Os limites de protecao atuais sao mantidos em memoria por processo: ate 30 requisicoes de PIX por IP por minuto e 5 por aparelho por minuto; recuperacao de acesso permite 30 por IP e 5 por aparelho a cada 15 minutos. Se o servico rodar com varias replicas, cada replica aplica seus proprios limites.
