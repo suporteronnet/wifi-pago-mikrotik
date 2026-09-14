@@ -10210,6 +10210,22 @@ function ensurePlanModal(){
 
           </div>
 
+          <div class="field">
+            <label for="planFormSubtitle">Subtítulo ou observação (opcional)</label>
+            <input id="planFormSubtitle" type="text" maxlength="120" placeholder="Ex.: Passe-livre durante todo o evento">
+            <div style="margin-top:5px;color:#64748b;font-size:11px;">Aparecerá em letras menores logo abaixo do nome do plano.</div>
+          </div>
+
+          <div class="field">
+            <label for="planFormHighlight">Destaque no portal do cliente</label>
+            <select id="planFormHighlight" style="width:100%;background:#07111f;color:#fff;border:1px solid #334155;border-radius:12px;padding:13px;outline:none;">
+              <option value="">Sem destaque</option>
+              <option value="popular">Mais escolhido</option>
+              <option value="fastest">Mais rápido</option>
+            </select>
+            <div style="margin-top:5px;color:#64748b;font-size:11px;">Cada evento pode ter um plano de cada tipo de destaque.</div>
+          </div>
+
 
           <div
             class="field"
@@ -10441,6 +10457,9 @@ function clearEventPlanForm(){
     planFormName:
       "",
 
+    planFormSubtitle:
+      "",
+
     planFormDurationValue:
       "",
 
@@ -10494,6 +10513,9 @@ function clearEventPlanForm(){
       "hours";
 
   }
+
+  const highlightSelect = document.getElementById("planFormHighlight");
+  if(highlightSelect) highlightSelect.value = "";
 
 
   const message =
@@ -10978,6 +11000,9 @@ function openEditPlanForm(planId){
     planFormName:
       plan.name || "",
 
+    planFormSubtitle:
+      plan.subtitle || "",
+
     planFormDurationValue:
       duration.value,
 
@@ -11035,6 +11060,9 @@ function openEditPlanForm(planId){
       duration.unit;
 
   }
+
+  const highlightSelect = document.getElementById("planFormHighlight");
+  if(highlightSelect) highlightSelect.value = plan.highlight || "";
 
 
   const message =
@@ -11161,6 +11189,10 @@ async function saveEventPlan(){
       "planFormName"
     )?.value
       .trim();
+
+  const subtitle = String(document.getElementById("planFormSubtitle")?.value || "").trim().slice(0, 120);
+  const highlightSelect = document.getElementById("planFormHighlight");
+  const highlight = ["popular", "fastest"].includes(highlightSelect?.value) ? highlightSelect.value : "";
 
 
   const durationValue =
@@ -11349,6 +11381,12 @@ async function saveEventPlan(){
 
     name:
       name,
+
+    subtitle:
+      subtitle,
+
+    highlight:
+      highlight,
 
     amount:
       amount,

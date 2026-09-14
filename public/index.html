@@ -670,7 +670,24 @@ code{
   font-size:9px;
   font-weight:900;
   box-shadow:0 6px 18px rgba(255,122,0,.24);
+  font-size:0;
 }
+
+.featured-badge::after{content:attr(data-label);font-size:9px}
+.plan-featured-popular{--accent:#ff7a00!important;--accent-soft:rgba(255,122,0,.12)!important}
+.plan-featured-fastest .featured-badge{background:linear-gradient(135deg,#38bdf8,#2563eb);box-shadow:0 6px 18px rgba(56,189,248,.2)}
+.plan-featured-fastest{--accent:#38bdf8!important;--accent-soft:rgba(56,189,248,.12)!important}
+.plan-featured-fastest .featured-plan-icon{background:linear-gradient(145deg,#38bdf8,#2563eb);border-color:#bae6fd;box-shadow:0 0 0 5px rgba(56,189,248,.1),0 0 26px rgba(56,189,248,.3)}
+.plan-subtitle{margin-top:5px;color:#cbd5e1;font-size:11px;line-height:1.35;font-weight:600}
+.plan-icon svg{width:27px;height:27px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.portal-icon{display:inline-flex;width:1em;height:1em;vertical-align:-.16em;align-items:center;justify-content:center;color:currentColor}
+.portal-icon svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.portal-form-message{margin-top:10px;padding:9px 11px;border-radius:10px;background:rgba(15,27,46,.74);color:#aebdd0;font-size:11px;line-height:1.45}
+.portal-form-message.error{border:1px solid rgba(239,68,68,.45);color:#fecaca;background:rgba(127,29,29,.18)}
+.portal-form-message.success{border:1px solid rgba(34,197,94,.4);color:#bbf7d0;background:rgba(20,83,45,.16)}
+.customer-field input.input-error{border-color:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.12)}
+.pix-expiry{margin:8px auto 0;padding:8px 10px;max-width:380px;border:1px solid rgba(245,158,11,.35);border-radius:9px;background:rgba(120,53,15,.16);color:#fde68a;font-size:12px;font-weight:800}
+.pix-guidance{margin:10px auto;color:#cbd5e1;font-size:12px;line-height:1.55}
 
 .plan-top{
   display:block;
@@ -1343,6 +1360,29 @@ code{
   }
 }
 
+/* Fundo compartilhado com o painel administrativo */
+body{
+  isolation:isolate;
+  background-color:#060d19;
+  background-image:
+    radial-gradient(ellipse at 8% 0%,rgba(37,99,235,.2),transparent 34%),
+    radial-gradient(ellipse at 92% 18%,rgba(14,165,233,.11),transparent 30%),
+    radial-gradient(ellipse at 50% 100%,rgba(79,70,229,.1),transparent 40%),
+    linear-gradient(145deg,#07111f 0%,#091426 48%,#060d19 100%);
+  background-attachment:fixed;
+}
+body:before{
+  z-index:-1;
+  opacity:.16;
+  background-image:
+    linear-gradient(rgba(148,163,184,.08) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(148,163,184,.08) 1px,transparent 1px);
+  background-size:42px 42px;
+  -webkit-mask-image:linear-gradient(to bottom,black,transparent 78%);
+  mask-image:linear-gradient(to bottom,black,transparent 78%);
+}
+@media(max-width:640px){body{background-attachment:scroll}}
+
 </style>
 
 </head>
@@ -1479,6 +1519,10 @@ code{
 
     </div>
 
+    <div id="customerFormMessage" class="portal-form-message" role="status" aria-live="polite">
+      Use o mesmo telefone e e-mail de uma compra anterior para que possamos recuperar seu acesso automaticamente.
+    </div>
+
     <div class="customer-privacy">
       <span>🔒</span>
       <span>
@@ -1567,6 +1611,12 @@ code{
     <div id="payStatus">
       Gerando PIX...
     </div>
+
+    <div id="pixExpiry" class="pix-expiry" role="status" aria-live="polite" hidden></div>
+
+    <p class="pix-guidance" id="paymentGuidance">
+      Pague pelo aplicativo do seu banco. Neste celular, use “Copiar PIX”; em outro aparelho, escaneie o QR Code. A liberação ocorre automaticamente após a confirmação.
+    </p>
 
     <div id="tempInfo"></div>
 
@@ -2112,6 +2162,8 @@ let currentRouterKey =
 let currentPixData =
   null;
 
+let pixCountdownInterval = null;
+
 
 // ============================================================
 // V15 - FUNIL DE CONVERSAO DO PORTAL
@@ -2620,9 +2672,13 @@ function savePendingPix(data){
     );
   }
 
+  startPixCountdown();
+
 }
 
 function clearPendingPix(){
+
+  stopPixCountdown();
 
   currentPixData =
     null;
@@ -2738,6 +2794,7 @@ function renderPendingPix(saved){
     .textContent =
       saved.qr_code || "";
 
+  startPixCountdown();
   scrollToPayment();
   poll();
 
@@ -3852,6 +3909,38 @@ function escapeHtml(value){
     .replace(/'/g, "&#039;");
 }
 
+function updatePixCountdown(){
+  const element = document.getElementById("pixExpiry");
+  if(!element) return;
+  if(!currentOrder || !currentPixData?.saved_at){
+    element.hidden = true;
+    element.textContent = "";
+    return;
+  }
+  const seconds = Math.max(0, Math.ceil((PIX_TRACKING_MS - pendingPixAgeMs()) / 1000));
+  const minutesLeft = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const secondsLeft = String(seconds % 60).padStart(2, "0");
+  element.hidden = false;
+  element.textContent = seconds > 0
+    ? `Acompanhamento automático deste PIX: ${minutesLeft}:${secondsLeft}`
+    : "O acompanhamento deste PIX terminou. Gere um novo PIX se ainda não pagou.";
+}
+
+function startPixCountdown(){
+  stopPixCountdown();
+  updatePixCountdown();
+  pixCountdownInterval = setInterval(updatePixCountdown, 1000);
+}
+
+function stopPixCountdown(){
+  if(pixCountdownInterval){
+    clearInterval(pixCountdownInterval);
+    pixCountdownInterval = null;
+  }
+  const element = document.getElementById("pixExpiry");
+  if(element){element.hidden = true; element.textContent = "";}
+}
+
 async function loadPlans(){
 
   try{
@@ -3960,6 +4049,8 @@ async function loadPlans(){
 
         (p,index) => {
 
+          const highlight = ["popular", "fastest"].includes(p.highlight) ? p.highlight : "";
+
           const rate =
             splitPlanRate(
               p.rate
@@ -3987,14 +4078,14 @@ async function loadPlans(){
           return `
 
         <div
-          class="card ${index === 1 ? "plan-featured" : ""}"
+          class="card ${highlight ? `plan-featured plan-featured-${highlight}` : ""}"
           style="--accent:${accent};--accent-soft:${accent}22;"
         >
 
           ${
-            index === 1
+            highlight
               ? `
-                <div class="featured-badge">
+                <div class="featured-badge" data-label="${highlight === "popular" ? "MAIS ESCOLHIDO" : "MAIS RÁPIDO"}">
                   ★ MAIS ESCOLHIDO
                 </div>
               `
@@ -4003,9 +4094,9 @@ async function loadPlans(){
 
           <div class="plan-top">
 
-            <div class="plan-icon ${index === 1 ? "featured-plan-icon" : ""}">
+            <div class="plan-icon ${highlight ? "featured-plan-icon" : ""}">
               ${
-                index === 1
+                highlight
                   ? "✦"
                   : planIcon(p.minutes)
               }
@@ -4016,6 +4107,8 @@ async function loadPlans(){
               <h2>
                 ${escapeHtml(p.name)}
               </h2>
+
+              ${p.subtitle ? `<div class="plan-subtitle">${escapeHtml(p.subtitle)}</div>` : ""}
 
               <div class="plan-duration">
                 ${friendlyDuration(p.minutes)} de acesso
@@ -4441,6 +4534,24 @@ document.addEventListener(
 // GERAR PIX
 // ============================================================
 
+function showPortalFormMessage(message, fieldId="", type="error"){
+  const output = document.getElementById("customerFormMessage");
+  document.querySelectorAll(".customer-field input").forEach(input => {
+    input.classList.remove("input-error");
+    input.removeAttribute("aria-invalid");
+  });
+  if(output){
+    output.textContent = message;
+    output.className = `portal-form-message${type === "error" ? " error" : type === "success" ? " success" : ""}`;
+  }
+  if(fieldId){
+    const field = document.getElementById(fieldId);
+    field?.classList.add("input-error");
+    field?.setAttribute("aria-invalid", "true");
+    field?.focus();
+  }
+}
+
 async function buy(
   plan_id,
   plan_name
@@ -4474,16 +4585,7 @@ async function buy(
   if(
     customerName.length < 2
   ){
-
-    alert(
-      "Informe seu nome."
-    );
-
-    document
-      .getElementById(
-        "customerName"
-      )
-      .focus();
+    showPortalFormMessage("Informe seu nome para identificar a compra.", "customerName");
 
     return;
 
@@ -4504,9 +4606,7 @@ async function buy(
     phoneDigits.length > 13
   ){
 
-    alert(
-      "Informe um telefone válido com DDD."
-    );
+    showPortalFormMessage("Informe um telefone válido com DDD para suporte e recuperação do acesso.", "customerPhone");
 
     document
       .getElementById(
@@ -4528,9 +4628,7 @@ async function buy(
       )
   ){
 
-    alert(
-      "Informe um e-mail válido."
-    );
+    showPortalFormMessage("Informe um e-mail válido para o comprovante e para recuperar compras anteriores.", "email");
 
     document
       .getElementById(
@@ -4545,6 +4643,8 @@ async function buy(
   // ==========================================================
   // V15 - FUNIL: CADASTRO CONCLUIDO + PLANO SELECIONADO
   // ==========================================================
+
+  showPortalFormMessage("Dados conferidos. Vamos gerar seu PIX com segurança.", "", "success");
 
   await sendPortalFunnelEvent(
     "REGISTRATION_COMPLETED",
@@ -6579,6 +6679,76 @@ async function copyPix(){
 //
 // Isso garante o roaming automático quando o MAC muda.
 // ============================================================
+
+function applyPortalIcons(root=document.body){
+  if(!root) return;
+  const shapes = {
+    wifi:'<path d="M2 8a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0m-11 4a5 5 0 0 1 8 0"/><path d="M12 20h.01"/>',
+    person:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    phone:'<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 18h4"/>',
+    mail:'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+    lock:'<rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/>',
+    card:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 9h20m-16 6h4"/>',
+    receipt:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6m-6 4h6"/>',
+    shield:'<path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/>',
+    bolt:'<path d="m13 2-9 12h7l-1 8 10-13h-7l1-7Z"/>',
+    globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18m0-18a14 14 0 0 0 0 18"/>',
+    signal:'<path d="M4 20v-3m5 3v-7m5 7V9m5 11V4"/>',
+    money:'<circle cx="12" cy="12" r="9"/><path d="M15 8.5c-.7-.6-1.6-.9-2.7-.9-1.4 0-2.4.7-2.4 1.8 0 2.8 5.4 1.2 5.4 4.4 0 1.2-1.1 2.1-2.8 2.1-1.1 0-2.2-.4-3-1.1M12 6v12"/>',
+    clipboard:'<rect x="5" y="4" width="14" height="18" rx="2"/><path d="M9 4V2h6v2M8 10h8m-8 4h8m-8 4h5"/>',
+    chat:'<path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5 9 9 0 0 1-4-.9L3 21l1.9-5.5a9 9 0 0 1-.9-4A8.5 8.5 0 0 1 12.5 3H13a8.5 8.5 0 0 1 8 8v.5Z"/>',
+    timer:'<circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6m-3 0v3"/>',
+    check:'<path d="m5 12 4 4L19 6"/>',
+    alert:'<path d="M10.3 3.9 2.6 17.2A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.8L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 3h.01"/>',
+    star:'<path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"/>',
+    gift:'<rect x="3" y="8" width="18" height="13" rx="2"/><path d="M2 8h20v4H2zm10 0v13m0-13H8a2.5 2.5 0 1 1 2.5-2.5C10.5 5 12 8 12 8Zm0 0h4a2.5 2.5 0 1 0-2.5-2.5C13.5 5 12 8 12 8Z"/>',
+    rocket:'<path d="M5 15c-1.5 0-2.5 1-3 3 2-.5 3-1.5 3-3Zm0 0 4 4m-4-4 4-4m0 8 4-4m-4-4c2-5 6-8 12-9-1 6-4 10-9 12"/><circle cx="16" cy="8" r="1"/>',
+    box:'<path d="m12 3 9 5-9 5-9-5 9-5Zm-9 5v9l9 5 9-5V8m-9 5v9"/>'
+  };
+  const iconByCode = {
+    "1F4E1":"wifi","1F4F6":"wifi","1F4F1":"phone","1F464":"person","2709":"mail","1F512":"lock","1F50F":"lock","1F6E1":"shield","26A1":"bolt","1F4B0":"money","1F4B3":"card","1F9FE":"receipt","1F4CB":"clipboard","1F4DC":"receipt","1F4CA":"signal","1F4C5":"clipboard","1F3AA":"star","1F4AC":"chat","23F1":"timer","2705":"check","26A0":"alert","1F381":"gift","1F680":"rocket","1F4E6":"box","1F310":"globe","1F4F2":"phone","1F4F3":"signal"
+  };
+  const pattern = /\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?/gu;
+  const ignored = new Set(["SCRIPT","STYLE","TEXTAREA","INPUT","CODE","PRE"]);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node){
+      const parent = node.parentElement;
+      if(!parent || ignored.has(parent.tagName) || parent.closest(".portal-icon,[contenteditable='true']")) return NodeFilter.FILTER_REJECT;
+      pattern.lastIndex = 0;
+      return pattern.test(node.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    }
+  });
+  const nodes = [];
+  while(walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(node => {
+    const text = node.nodeValue;
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+    pattern.lastIndex = 0;
+    for(const match of text.matchAll(pattern)){
+      if(match.index > cursor) fragment.append(document.createTextNode(text.slice(cursor, match.index)));
+      const code = Array.from(match[0])[0].codePointAt(0).toString(16).toUpperCase();
+      const shape = shapes[iconByCode[code] || "star"];
+      const icon = document.createElement("span");
+      icon.className = "portal-icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.innerHTML = `<svg viewBox="0 0 24 24">${shape}</svg>`;
+      fragment.append(icon);
+      cursor = match.index + match[0].length;
+    }
+    if(cursor < text.length) fragment.append(document.createTextNode(text.slice(cursor)));
+    node.replaceWith(fragment);
+  });
+}
+
+applyPortalIcons();
+new MutationObserver(records => records.forEach(record => {
+  if(record.type === "characterData") applyPortalIcons(record.target.parentElement);
+  record.addedNodes.forEach(node => {
+    if(node.nodeType === Node.ELEMENT_NODE) applyPortalIcons(node);
+    else if(node.nodeType === Node.TEXT_NODE && node.parentElement) applyPortalIcons(node.parentElement);
+  });
+})).observe(document.body, {childList:true,subtree:true,characterData:true});
 
 async function startPortal(){
 

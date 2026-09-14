@@ -4698,6 +4698,8 @@ app.get(
               rate_limit,
               mikrotik_profile,
               description,
+              subtitle,
+              highlight,
               sort_order
 
             FROM event_plans
@@ -4746,7 +4748,13 @@ app.get(
                 plan.mikrotik_profile,
 
               description:
-                plan.description || ""
+                plan.description || "",
+
+              subtitle:
+                plan.subtitle || "",
+
+              highlight:
+                plan.highlight || ""
 
             })
           )
@@ -18812,6 +18820,16 @@ ensureEventPlanColumn(
   "TEXT"
 );
 
+ensureEventPlanColumn(
+  "subtitle",
+  "TEXT NOT NULL DEFAULT ''"
+);
+
+ensureEventPlanColumn(
+  "highlight",
+  "TEXT NOT NULL DEFAULT ''"
+);
+
 
 db.exec(`
 
@@ -21724,84 +21742,51 @@ app.post(
       const now =
         nowIso();
 
+      const subtitle =
+        String(req.body?.subtitle || "")
+          .trim()
+          .slice(0, 120);
 
-      const result =
-        db.prepare(`
+      const highlight =
+        ["popular", "fastest"].includes(String(req.body?.highlight || ""))
+          ? String(req.body.highlight)
+          : "";
 
+      const createdPlan = db.transaction(() => {
+        const result = db.prepare(`
           INSERT INTO event_plans (
-
-            event_id,
-
-            plan_key,
-
-            name,
-
-            amount,
-
-            minutes,
-
-            rate_limit,
-
-            mikrotik_profile,
-
-            description,
-
-            sort_order,
-
-            active,
-
-            created_at,
-
-            updated_at
-
-          )
-
-          VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-          )
-
+            event_id, plan_key, name, amount, minutes, rate_limit,
+            mikrotik_profile, description, subtitle, highlight,
+            sort_order, active, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
-
           eventId,
-
           planKey,
-
           name,
-
           amount,
-
           minutes,
-
           rateLimit,
-
           profile,
-
-          String(
-            req.body?.description || ""
-          )
-            .trim()
-            .slice(
-              0,
-              300
-            ),
-
-          Number.isInteger(
-            Number(
-              req.body?.sort_order
-            )
-          )
-            ? Number(
-                req.body.sort_order
-              )
-            : 0,
-
+          String(req.body?.description || "").trim().slice(0, 300),
+          subtitle,
+          highlight,
+          Number.isInteger(Number(req.body?.sort_order)) ? Number(req.body.sort_order) : 0,
           1,
-
           now,
-
           now
-
         );
+
+        if(highlight){
+          db.prepare(`
+            UPDATE event_plans SET highlight=''
+            WHERE event_id=? AND id<>? AND highlight=?
+          `).run(eventId, result.lastInsertRowid, highlight);
+        }
+
+        return result;
+      });
+
+      const result = createdPlan();
 
 
       queuePlanSync(
@@ -21986,6 +21971,18 @@ app.put(
           ? 0
           : 1;
 
+      const subtitle =
+        req.body?.subtitle === undefined
+          ? String(plan.subtitle || "")
+          : String(req.body.subtitle || "").trim().slice(0, 120);
+
+      const highlight =
+        req.body?.highlight === undefined
+          ? String(plan.highlight || "")
+          : ["popular", "fastest"].includes(String(req.body.highlight || ""))
+            ? String(req.body.highlight)
+            : "";
+
 
       db.prepare(`
 
@@ -22004,6 +22001,10 @@ app.put(
           mikrotik_profile=?,
 
           description=?,
+
+          subtitle=?,
+
+          highlight=?,
 
           sort_order=?,
 
@@ -22060,6 +22061,10 @@ app.put(
             300
           ),
 
+        subtitle,
+
+        highlight,
+
         Number.isInteger(
           Number(
             req.body?.sort_order
@@ -22079,6 +22084,13 @@ app.put(
         planId
 
       );
+
+      if(highlight){
+        db.prepare(`
+          UPDATE event_plans SET highlight=''
+          WHERE event_id=? AND id<>? AND highlight=?
+        `).run(plan.event_id, planId, highlight);
+      }
 
 
       const updatedPlan =
