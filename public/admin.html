@@ -25706,6 +25706,22 @@ async function openCustomerData(
 
                 }
 
+                if(
+                  String(item.step || "").toUpperCase() === "REGISTRATION_COMPLETED"
+                  &&
+                  item.metadata
+                  &&
+                  typeof item.metadata.sales_contact_consent === "boolean"
+                ){
+
+                  extras.push(
+                    item.metadata.sales_contact_consent
+                      ? "Autorizou contato para concluir a compra"
+                      : "Não autorizou contato para concluir a compra"
+                  );
+
+                }
+
 
                 return `
 

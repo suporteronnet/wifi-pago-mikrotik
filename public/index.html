@@ -211,6 +211,24 @@ body:before{
   font-size:11px;
   line-height:1.45;
 }
+.followup-consent{
+  display:flex;
+  align-items:flex-start;
+  gap:9px;
+  margin-top:11px;
+  color:#aebdd0;
+  font-size:12px;
+  line-height:1.45;
+  cursor:pointer;
+}
+#salesFollowupConsent{
+  width:17px;
+  height:17px;
+  flex:0 0 17px;
+  margin:1px 0 0;
+  padding:0;
+  accent-color:var(--orange);
+}
 
 .portal-progress{
   display:grid;
@@ -1572,10 +1590,14 @@ body:before{
     <div class="customer-privacy">
       <span>🔒</span>
       <span>
-        Seus dados são utilizados para identificação do pagamento,
-        suporte ao acesso Wi-Fi e atendimento relacionado ao serviço.
+        Usamos seus dados para identificar o pagamento, recuperar o acesso e prestar suporte.
       </span>
     </div>
+
+    <label class="followup-consent" for="salesFollowupConsent">
+      <input id="salesFollowupConsent" type="checkbox">
+      <span>Autorizo contato pelo WhatsApp ou e-mail para concluir esta compra. (opcional)</span>
+    </label>
 
     <button class="wizard-button" type="button" onclick="continueToPlans()">
       CONTINUAR PARA OS PLANOS <span aria-hidden="true">›</span>
@@ -2249,6 +2271,8 @@ async function sendPortalFunnelEvent(
   extra = {}
 ){
 
+  let pendingLocalKey = "";
+
   try{
 
     const normalizedStep =
@@ -2291,7 +2315,20 @@ async function sendPortalFunnelEvent(
       + "|"
       + String(orderRef || "")
       + "|"
-      + String(planId || "");
+      + String(planId || "")
+      + "|"
+      + (
+        normalizedStep === "REGISTRATION_COMPLETED"
+          ? [
+              extra.customer_name || "",
+              extra.customer_phone || "",
+              extra.email || "",
+              extra.metadata?.sales_contact_consent === true ? "yes" : "no"
+            ].join("|")
+          : ""
+      );
+
+    pendingLocalKey = localKey;
 
 
     if(
@@ -2299,7 +2336,9 @@ async function sendPortalFunnelEvent(
         localKey
       )
     ){
-      return null;
+      return normalizedStep === "REGISTRATION_COMPLETED"
+        ? {customer_saved:true, duplicate:true}
+        : null;
     }
 
 
@@ -2373,14 +2412,28 @@ async function sendPortalFunnelEvent(
     }
 
 
-    return await response
+    const result = await response
       .json()
       .catch(
         () => null
       );
 
+    if(
+      normalizedStep === "REGISTRATION_COMPLETED"
+      &&
+      result?.customer_saved !== true
+    ){
+      portalFunnelSent.delete(localKey);
+    }
+
+    return result;
+
   }
   catch(error){
+
+    if(pendingLocalKey){
+      portalFunnelSent.delete(pendingLocalKey);
+    }
 
     console.warn(
       "FUNIL PORTAL: falha ao registrar",
@@ -4041,6 +4094,28 @@ async function continueToPlans(){
     await recoverExistingAccessSilently();
     if(currentOrder) return;
 
+    const registrationEvent = await sendPortalFunnelEvent(
+      "REGISTRATION_COMPLETED",
+      {
+        customer_name:form.name,
+        customer_phone:form.phone,
+        email:form.email,
+        metadata:{
+          has_name:true,
+          has_phone:true,
+          has_email:true,
+          sales_contact_consent:document.getElementById("salesFollowupConsent")?.checked === true
+        }
+      }
+    );
+
+    if(!registrationEvent?.customer_saved){
+      showPortalFormMessage("Não foi possível salvar seus dados agora. Confira sua conexão e tente novamente.");
+      return;
+    }
+
+    showPortalFormMessage("Dados salvos. Agora escolha o plano que preferir.", "", "success");
+
     setPlansAreaVisible(true);
     setWizardStep("plans", true);
   }
@@ -4794,31 +4869,8 @@ async function buy(
 
   }
 
-  // ==========================================================
-  // V15 - FUNIL: CADASTRO CONCLUIDO + PLANO SELECIONADO
-  // ==========================================================
-
-  showPortalFormMessage("Dados conferidos. Vamos gerar seu PIX com segurança.", "", "success");
-
-  await sendPortalFunnelEvent(
-    "REGISTRATION_COMPLETED",
-    {
-      plan_id,
-      customer_name:
-        customerName,
-      customer_phone:
-        customerPhone,
-      email:
-        email,
-      metadata:{
-        has_name:true,
-        has_phone:true,
-        has_email:true
-      }
-    }
-  );
-
-
+  // O cadastro foi salvo ao avançar para os planos. Aqui
+  // registramos somente a escolha feita pelo cliente.
   await sendPortalFunnelEvent(
     "PLAN_SELECTED",
     {
