@@ -1619,9 +1619,7 @@ body::before{
 }
 
 .menu{
-  position:sticky;
-  top:8px;
-  z-index:30;
+  position:static;
   padding:7px;
   border:1px solid rgba(71,85,105,.62);
   border-radius:16px;
@@ -1735,7 +1733,6 @@ button:focus-visible,
   }
 
   .menu{
-    top:5px;
     display:grid;
     grid-template-columns:repeat(2,minmax(0,1fr)) !important;
     gap:8px;
