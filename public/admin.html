@@ -1650,6 +1650,8 @@ body::before{
   stroke-linecap:round;
   stroke-linejoin:round;
 }
+.ui-icon{display:inline-flex;width:1em;height:1em;vertical-align:-.16em;align-items:center;justify-content:center;color:currentColor}
+.ui-icon svg{width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 
 .empty-state{display:grid;justify-items:center;gap:8px;padding:24px 18px;text-align:center;border:1px dashed rgba(100,116,139,.52);border-radius:14px;color:#94a3b8;background:rgba(7,17,31,.56)}
 .empty-state strong{color:#e2e8f0;font-size:14px}
@@ -28614,6 +28616,74 @@ function applyConsistentMenuIcons(){
     button.setAttribute("aria-label", label);
   });
 }
+
+function applyConsistentUiIcons(root=document.body){
+  const pictograms = {
+    signal:'<path d="M2 9a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0m-11 3a5 5 0 0 1 8 0"/><path d="M12 19h.01"/>',
+    money:'<circle cx="12" cy="12" r="9"/><path d="M15 8.5c-.7-.6-1.6-.9-2.7-.9-1.4 0-2.4.7-2.4 1.8 0 2.8 5.4 1.2 5.4 4.4 0 1.2-1.1 2.1-2.8 2.1-1.1 0-2.2-.4-3-1.1M12 6v12"/>',
+    card:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 9h20m-16 6h4"/>',
+    phone:'<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 18h4"/>',
+    chart:'<path d="M3 3v18h18"/><path d="m7 14 4-4 3 3 6-7"/>',
+    clipboard:'<rect x="5" y="4" width="14" height="18" rx="2"/><path d="M9 4V2h6v2M8 10h8m-8 4h8m-8 4h5"/>',
+    calendar:'<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 9h18m4 4h.01m-8 0h.01m-4 4h.01"/>',
+    gear:'<circle cx="12" cy="12" r="3"/><path d="m19.4 15 .1.1 1.1.8-1.1 1.9-1.3-.5a8 8 0 0 1-1.6.9l-.2 1.4h-2.2l-.2-1.4a8 8 0 0 1-1.6-.9l-1.3.5-1.1-1.9 1.1-.8a7 7 0 0 1 0-1.8l-1.1-.8 1.1-1.9 1.3.5a8 8 0 0 1 1.6-.9l.2-1.4h2.2l.2 1.4a8 8 0 0 1 1.6.9l1.3-.5 1.1 1.9-1.1.8a7 7 0 0 1 0 1.8Z" transform="translate(-1 -1)"/>',
+    alert:'<path d="M10.3 3.9 2.6 17.2A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.8L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 3h.01"/>',
+    person:'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    trash:'<path d="M3 6h18m-2 0-.8 14H5.8L5 6m3 0V4h8v2m-7 4v6m4-6v6"/>',
+    check:'<path d="m5 12 4 4L19 6"/>',
+    blocked:'<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>',
+    edit:'<path d="m4 16.5-.8 4.3 4.3-.8L19 8.5 15.5 5 4 16.5Z"/><path d="m13.8 6.7 3.5 3.5"/>',
+    pause:'<path d="M8 5v14m8-14v14"/>',
+    play:'<path d="m8 5 12 7-12 7V5Z"/>',
+    globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18m0-18a14 14 0 0 0 0 18"/>',
+    timer:'<circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6m-3 0v3"/>',
+    rocket:'<path d="M5 15c-1.5 0-2.5 1-3 3 2-.5 3-1.5 3-3Zm0 0 4 4m-4-4 4-4m0 8 4-4m-4-4c2-5 6-8 12-9-1 6-4 10-9 12"/><circle cx="16" cy="8" r="1"/>',
+    link:'<path d="M10 13a5 5 0 0 0 7.1 0l3-3A5 5 0 0 0 13 2.9l-1.7 1.7m2.7 6.4a5 5 0 0 0-7.1 0l-3 3A5 5 0 0 0 11 21.1l1.7-1.7"/>',
+    gift:'<rect x="3" y="8" width="18" height="13" rx="2"/><path d="M2 8h20v4H2zm10 0v13m0-13H8a2.5 2.5 0 1 1 2.5-2.5C10.5 5 12 8 12 8Zm0 0h4a2.5 2.5 0 1 0-2.5-2.5C13.5 5 12 8 12 8Z"/>',
+    box:'<path d="m12 3 9 5-9 5-9-5 9-5Zm-9 5v9l9 5 9-5V8m-9 5v9"/>',
+    wifi:'<path d="M2 8a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0m-11 4a5 5 0 0 1 8 0"/><path d="M12 20h.01"/>'
+  };
+  const pictogramByCode = {
+    "1F4E1":"signal","1F4F6":"signal","1F6DF":"signal","1F4B0":"money","1F9FE":"clipboard","1F4B3":"card","1F4F1":"phone","1F4CA":"chart","1F4CB":"clipboard","1F4C5":"calendar","1F3AA":"calendar","2699":"gear","26A0":"alert","1F464":"person","1F465":"person","1F5D1":"trash","2705":"check","2713":"check","26D4":"blocked","270F":"edit","270D":"edit","23F8":"pause","25B6":"play","1F310":"globe","23F1":"timer","1F680":"rocket","1F517":"link","1F381":"gift","1F4E6":"box","1F4E1":"wifi","1F4F6":"wifi"
+  };
+  const emojiPattern = /\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?/gu;
+  const ignoredTags = new Set(["SCRIPT","STYLE","TEXTAREA","INPUT","CODE","PRE"]);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node){
+      const parent = node.parentElement;
+      if(!parent || ignoredTags.has(parent.tagName) || parent.closest(".ui-icon,[contenteditable='true']")) return NodeFilter.FILTER_REJECT;
+      emojiPattern.lastIndex = 0;
+      return emojiPattern.test(node.nodeValue) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    }
+  });
+  const nodes = [];
+  while(walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(node => {
+    const text = node.nodeValue;
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+    emojiPattern.lastIndex = 0;
+    for(const match of text.matchAll(emojiPattern)){
+      if(match.index > cursor) fragment.append(document.createTextNode(text.slice(cursor, match.index)));
+      const code = Array.from(match[0])[0].codePointAt(0).toString(16).toUpperCase();
+      const iconName = pictogramByCode[code] || "chart";
+      const icon = document.createElement("span");
+      icon.className = "ui-icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.innerHTML = `<svg viewBox="0 0 24 24">${pictograms[iconName]}</svg>`;
+      fragment.append(icon);
+      cursor = match.index + match[0].length;
+    }
+    if(cursor < text.length) fragment.append(document.createTextNode(text.slice(cursor)));
+    node.replaceWith(fragment);
+  });
+}
+
+applyConsistentUiIcons();
+new MutationObserver(records => records.forEach(record => record.addedNodes.forEach(node => {
+  if(node.nodeType === Node.ELEMENT_NODE) applyConsistentUiIcons(node);
+  else if(node.nodeType === Node.TEXT_NODE && node.parentElement) applyConsistentUiIcons(node.parentElement);
+}))).observe(document.body, {childList:true,subtree:true});
 
 
 // ============================================================
