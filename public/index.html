@@ -304,11 +304,23 @@ body:before{
 .wizard-step{min-width:0}
 #planStep .section-title{margin-top:5px}
 #paymentStep #pay{margin-top:10px}
+#paymentStep #pay{padding:11px;margin-top:8px}
+#paymentStep #payStatus{font-size:14px}
+#paymentStep .pix-guidance{font-size:11px;margin:7px auto;line-height:1.4}
+#paymentStep #qr{max-width:190px;margin-top:6px;padding:6px}
+#paymentStep #pay code{max-height:76px;padding:8px;font-size:10px}
+#paymentStep #tempInfo .temp-box{margin:7px 0;padding:8px 10px;font-size:11px;line-height:1.35}
+#paymentStep #tempInfo .temp-title{margin-bottom:2px;font-size:12px}
+#paymentStep .copy-button{margin-top:7px;padding:13px 10px;font-size:12px}
+#paymentStep #copyHelp{margin:6px 0 0;font-size:10px;line-height:1.35}
 
 @media(max-width:390px){
   .portal-progress-step{font-size:10px;gap:5px}
   .portal-progress-step span{width:19px;height:19px}
   .wizard-heading h2{font-size:17px}
+}
+@media(max-width:480px){
+  #paymentStep #qr{max-width:170px}
 }
 
 @media (max-width:640px){
@@ -1596,7 +1608,7 @@ body:before{
 
     <label class="followup-consent" for="salesFollowupConsent">
       <input id="salesFollowupConsent" type="checkbox">
-      <span>Autorizo contato pelo WhatsApp ou e-mail para concluir esta compra. (opcional)</span>
+      <span>Autorizo contato pelo WhatsApp ou e-mail. (opcional)</span>
     </label>
 
     <button class="wizard-button" type="button" onclick="continueToPlans()">
@@ -1631,68 +1643,9 @@ body:before{
     <div class="wizard-heading">
       <div class="wizard-kicker">ETAPA 3 DE 3 · PAGAMENTO</div>
       <h2>Faça o pagamento via PIX</h2>
-      <p>Copie o código ou escaneie o QR Code. A internet será liberada automaticamente após a confirmação.</p>
+      <p>Pague pelo QR Code ou copie o PIX. O Wi-Fi será liberado após a confirmação.</p>
     </div>
     <button class="wizard-back" id="paymentBackButton" type="button" onclick="backToPlans()" hidden>‹ Voltar aos planos</button>
-
-    <div class="trust-row">
-      <div class="trust-item">
-        <span class="trust-icon">⚡</span>
-        Liberação automática
-      </div>
-
-      <div class="trust-item">
-        <span class="trust-icon">🔒</span>
-        Pagamento seguro
-      </div>
-
-      <div class="trust-item">
-        <span class="trust-icon">📱</span>
-        Fácil no celular
-      </div>
-    </div>
-
-
-
-  <section class="payment-trust">
-    <div class="payment-icon">🛡️</div>
-
-    <div class="payment-copy">
-      <strong>Pagamento 100% seguro</strong>
-      <span>
-        Ambiente protegido. Seu pagamento é processado de forma segura via PIX.
-      </span>
-    </div>
-
-    <div class="payment-brand">
-      PIX • Mercado Pago
-    </div>
-  </section>
-
-  <section class="support-card">
-    <div class="support-title">
-      PRECISA DE AJUDA?
-    </div>
-
-    <div class="support-text">
-      Se tiver alguma dúvida sobre o acesso ou pagamento, fale diretamente com nosso atendimento.
-    </div>
-
-    <a
-      class="whatsapp-button"
-      href="https://wa.me/5516988118354?text=Ol%C3%A1%21%20Estou%20usando%20o%20WI-FI%20TOTAL%20e%20preciso%20de%20ajuda."
-      target="_blank"
-      rel="noopener noreferrer"
-    >
-      <span class="whatsapp-icon">💬</span>
-      FALE CONOSCO NO WHATSAPP
-    </a>
-  </section>
-
-  <div class="security-strip">
-    <span>🔐</span>
-    <span><b>PIX seguro</b> • liberação automática após confirmação</span>
-  </div>
 
   <div id="pay">
 
@@ -1703,7 +1656,7 @@ body:before{
     <div id="pixExpiry" class="pix-expiry" role="status" aria-live="polite" hidden></div>
 
     <p class="pix-guidance" id="paymentGuidance">
-      Pague pelo aplicativo do seu banco. Neste celular, use “Copiar PIX”; em outro aparelho, escaneie o QR Code. A liberação ocorre automaticamente após a confirmação.
+      Pague no app do seu banco. Neste celular, copie o código abaixo; em outro aparelho, escaneie o QR Code.
     </p>
 
     <div id="tempInfo"></div>
@@ -1727,22 +1680,42 @@ body:before{
       COPIAR PIX E LIBERAR INTERNET
     </button>
 
-    <p class="muted" id="copyHelp">
-      Se outra pessoa for pagar, deixe o QR Code aberto para ela escanear.
-      Se você for pagar neste celular, toque em
-      <b>COPIAR PIX E LIBERAR INTERNET</b>.
-    </p>
-
-    <p class="muted">
-      A página verifica o pagamento automaticamente.
+    <p class="muted" id="copyHelp" role="status" aria-live="polite">
+      A confirmação do pagamento é verificada automaticamente.
     </p>
 
   </div>
+
+  <section class="payment-trust">
+    <div class="payment-icon">🛡️</div>
+    <div class="payment-copy">
+      <strong>Pagamento 100% seguro</strong>
+      <span>Ambiente protegido. Seu pagamento é processado de forma segura via PIX.</span>
+    </div>
+    <div class="payment-brand">PIX • Mercado Pago</div>
   </section>
 
-  <footer class="footer">
-    <strong>WI-FI TOTAL</strong><br>
-    Conexão simples, rápida e segura por PIX.
+  </section>
+
+  <footer class="portal-footer">
+    <div class="footer">
+      <strong>WI-FI TOTAL</strong><br>
+      Conexão simples, rápida e segura por PIX.
+    </div>
+
+    <section class="support-card">
+      <div class="support-title">PRECISA DE AJUDA?</div>
+      <div class="support-text">Se tiver alguma dúvida sobre o acesso ou pagamento, fale diretamente com nosso atendimento.</div>
+      <a
+        class="whatsapp-button"
+        href="https://wa.me/5516988118354?text=Ol%C3%A1%21%20Estou%20usando%20o%20WI-FI%20TOTAL%20e%20preciso%20de%20ajuda."
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <span class="whatsapp-icon">💬</span>
+        FALE CONOSCO NO WHATSAPP
+      </a>
+    </section>
   </footer>
 
 </div>
@@ -2931,7 +2904,7 @@ function renderPendingPix(saved){
       saved.qr_code || "";
 
   startPixCountdown();
-  scrollToPayment();
+  scrollToPayment(false, "copyButton");
   poll();
 
   return true;
@@ -4452,7 +4425,8 @@ async function loadPlans(){
 // ============================================================
 
 function scrollToPayment(
-  force = false
+  force = false,
+  targetId = "pay"
 ){
 
   if(
@@ -4492,12 +4466,15 @@ function scrollToPayment(
         return;
       }
 
+      const target =
+        document.getElementById(targetId)
+        ||
+        pay;
 
       try{
-
-        pay.scrollIntoView({
+        target.scrollIntoView({
           behavior:"auto",
-          block:"start"
+          block:targetId === "copyButton" ? "center" : "start"
         });
 
       }
@@ -4506,7 +4483,7 @@ function scrollToPayment(
         try{
           window.scrollTo(
             0,
-            pay.offsetTop || 0
+            target.offsetTop || pay.offsetTop || 0
           );
         }
         catch(innerError){
@@ -4925,8 +4902,6 @@ async function buy(
     .innerHTML =
       "";
 
-  scrollToPayment();
-
   try{
 
     const response =
@@ -5000,6 +4975,7 @@ async function buy(
 
       unlockCustomerFields();
       document.getElementById("paymentBackButton")?.removeAttribute("hidden");
+      scrollToPayment();
 
       return;
 
@@ -5103,7 +5079,7 @@ async function buy(
       data.temporary_access
     );
 
-    scrollToPayment();
+    scrollToPayment(false, "copyButton");
 
     poll();
 
@@ -5124,6 +5100,7 @@ async function buy(
 
     unlockCustomerFields();
     document.getElementById("paymentBackButton")?.removeAttribute("hidden");
+    scrollToPayment();
 
   }
 
@@ -5174,26 +5151,10 @@ function showTemporaryAccess(
     ){
 
       box.innerHTML = `
-
         <div class="temp-box temp-ok">
-
-          <div class="temp-title">
-            PIX pronto ✅
-          </div>
-
-          <div>
-            O QR Code ficará aberto enquanto você não iniciar a cortesia.
-          </div>
-
-          <br>
-
-          <div>
-            Para liberar a internet temporária, toque em
-            <b>COPIAR PIX E LIBERAR INTERNET</b>.
-          </div>
-
+          <div class="temp-title">PIX pronto ✅</div>
+          Toque no botão abaixo para copiar o PIX e liberar a cortesia.
         </div>
-
       `;
 
       return;
