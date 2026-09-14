@@ -39,11 +39,22 @@ if (missingRequiredEnv.length) {
 
 const adminUser = String(process.env.ADMIN_USER || "admin").trim();
 const adminPassword = String(process.env.ADMIN_PASSWORD || "").trim();
+const adminPasswordCharacterClasses = [
+  /[a-z]/.test(adminPassword),
+  /[A-Z]/.test(adminPassword),
+  /[0-9]/.test(adminPassword),
+  /[^a-zA-Z0-9]/.test(adminPassword)
+].filter(Boolean).length;
 if (
   adminPassword
-  && ["troque-esta-senha", "281533", "admin", "password"].includes(adminPassword.toLowerCase())
+  && (
+    adminPassword.length < 14
+    || adminPasswordCharacterClasses < 3
+    || /^(.)\1+$/.test(adminPassword)
+    || ["troque-esta-senha", "admin", "password"].includes(adminPassword.toLowerCase())
+  )
 ) {
-  throw new Error("ADMIN_PASSWORD usa uma senha padrao conhecida; defina uma senha forte");
+  throw new Error("ADMIN_PASSWORD deve ter ao menos 14 caracteres e combinar 3 tipos: letras minusculas, maiusculas, numeros e simbolos");
 }
 
 const adminAuth = basicAuth({
