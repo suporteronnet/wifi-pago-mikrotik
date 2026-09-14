@@ -1,4 +1,4 @@
-<!doctype html>
+ <!doctype html>
 
 <html lang="pt-BR">
 
@@ -210,6 +210,87 @@ body:before{
   color:#7f8ca3;
   font-size:11px;
   line-height:1.45;
+}
+
+.portal-progress{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+  margin:12px 0 14px;
+}
+.portal-progress-step{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  min-width:0;
+  padding:9px 5px;
+  border:1px solid var(--line);
+  border-radius:11px;
+  background:rgba(13,27,46,.66);
+  color:#8292a7;
+  font-size:11px;
+  font-weight:800;
+  transition:background .2s,border-color .2s,color .2s;
+}
+.portal-progress-step span{
+  display:grid;
+  place-items:center;
+  width:21px;
+  height:21px;
+  border-radius:50%;
+  background:#1b2a3d;
+  font-size:10px;
+}
+.portal-progress-step.active,
+.portal-progress-step.complete{
+  border-color:rgba(255,122,0,.5);
+  color:#fff;
+  background:rgba(255,122,0,.1);
+}
+.portal-progress-step.active span,
+.portal-progress-step.complete span{
+  background:var(--orange);
+  color:#fff;
+}
+.wizard-heading{margin:0 0 15px}
+.wizard-kicker{color:var(--orange2);font-size:10px;font-weight:900;letter-spacing:1.15px}
+.wizard-heading h2{margin:5px 0 4px;font-size:19px;line-height:1.2}
+.wizard-heading p{margin:0;color:#aab7c7;font-size:12px;line-height:1.5}
+.wizard-button{
+  width:100%;
+  margin-top:15px;
+  padding:14px;
+  border:0;
+  border-radius:12px;
+  background:linear-gradient(135deg,var(--orange2),#ff5a00);
+  color:#fff;
+  font-size:13px;
+  font-weight:900;
+  letter-spacing:.35px;
+  cursor:pointer;
+  box-shadow:0 8px 22px rgba(255,122,0,.2);
+}
+.wizard-button:disabled{opacity:.65;cursor:wait}
+.wizard-button span{font-size:20px;vertical-align:-1px;margin-left:5px}
+.wizard-back{
+  margin:-4px 0 8px;
+  padding:7px 0;
+  border:0;
+  background:transparent;
+  color:#b8c6d8;
+  font-size:12px;
+  font-weight:700;
+  cursor:pointer;
+}
+.wizard-step{min-width:0}
+#planStep .section-title{margin-top:5px}
+#paymentStep #pay{margin-top:10px}
+
+@media(max-width:390px){
+  .portal-progress-step{font-size:10px;gap:5px}
+  .portal-progress-step span{width:19px;height:19px}
+  .wizard-heading h2{font-size:17px}
 }
 
 @media (max-width:640px){
@@ -1424,50 +1505,20 @@ body:before{
       </div>
     </div>
 
-  <section class="how-card how-card-top">
-    <div class="how-title">
-      COMO FUNCIONA
-    </div>
-
-    <div class="how-steps how-steps-four">
-
-      <div class="how-step">
-        <div class="how-number">1</div>
-        <div class="how-icon">✉️</div>
-        <div class="how-text">
-          Informe seus dados
-        </div>
-      </div>
-
-      <div class="how-step">
-        <div class="how-number">2</div>
-        <div class="how-icon">📋</div>
-        <div class="how-text">
-          Escolha o plano
-        </div>
-      </div>
-
-      <div class="how-step">
-        <div class="how-number">3</div>
-        <div class="how-icon">💠</div>
-        <div class="how-text">
-          Copie o PIX e pague no seu banco
-        </div>
-      </div>
-
-      <div class="how-step">
-        <div class="how-number">4</div>
-        <div class="how-icon">📶</div>
-        <div class="how-text">
-          Aguarde a liberação da navegação
-        </div>
-      </div>
-
-    </div>
-  </section>
+  <nav class="portal-progress" aria-label="Etapas da compra">
+    <div class="portal-progress-step" data-progress="details"><span>1</span> Seus dados</div>
+    <div class="portal-progress-step" data-progress="plans"><span>2</span> Plano</div>
+    <div class="portal-progress-step" data-progress="payment"><span>3</span> PIX</div>
+  </nav>
   </header>
 
-  <section class="email-panel">
+  <section class="email-panel wizard-step" id="customerStep">
+
+    <div class="wizard-heading">
+      <div class="wizard-kicker">ETAPA 1 DE 3 · SEUS DADOS</div>
+      <h2>Vamos identificar sua compra</h2>
+      <p>Informe seus dados para gerar o comprovante e facilitar a recuperação do acesso.</p>
+    </div>
 
     <div class="customer-fields">
 
@@ -1531,21 +1582,41 @@ body:before{
       </span>
     </div>
 
+    <button class="wizard-button" type="button" onclick="continueToPlans()">
+      CONTINUAR PARA OS PLANOS <span aria-hidden="true">›</span>
+    </button>
+
   </section>
 
-  <div class="section-title" id="plansTitle" style="display:none;">
-    Escolha seu plano
-  </div>
+  <section class="wizard-step" id="planStep" style="display:none;">
+    <div class="wizard-heading">
+      <div class="wizard-kicker">ETAPA 2 DE 3 · ESCOLHA DO PLANO</div>
+      <h2>Escolha o acesso ideal</h2>
+      <p>Confira o valor, o tempo e a velocidade. Ao selecionar, vamos gerar seu PIX.</p>
+    </div>
 
-  <div
-    class="grid"
-    id="plans"
-    style="display:none;">
-  </div>
+    <button class="wizard-back" type="button" onclick="setWizardStep('details')">‹ Voltar aos meus dados</button>
 
-  <div class="plan-note" id="plansNote" style="display:none;">
-    ⓘ A velocidade pode variar de acordo com a disponibilidade da rede.
-  </div>
+    <div class="section-title" id="plansTitle" style="display:none;">
+      Planos disponíveis
+    </div>
+
+    <div class="grid" id="plans" style="display:none;"></div>
+
+    <div class="plan-note" id="plansNote" style="display:none;">
+      ⓘ A velocidade pode variar de acordo com a disponibilidade da rede.
+    </div>
+
+    <div id="planCheckoutMessage" class="portal-form-message" role="status" aria-live="polite" hidden></div>
+  </section>
+
+  <section class="wizard-step" id="paymentStep" style="display:none;">
+    <div class="wizard-heading">
+      <div class="wizard-kicker">ETAPA 3 DE 3 · PAGAMENTO</div>
+      <h2>Faça o pagamento via PIX</h2>
+      <p>Copie o código ou escaneie o QR Code. A internet será liberada automaticamente após a confirmação.</p>
+    </div>
+    <button class="wizard-back" id="paymentBackButton" type="button" onclick="backToPlans()" hidden>‹ Voltar aos planos</button>
 
     <div class="trust-row">
       <div class="trust-item">
@@ -1650,6 +1721,7 @@ body:before{
     </p>
 
   </div>
+  </section>
 
   <footer class="footer">
     <strong>WI-FI TOTAL</strong><br>
@@ -2488,7 +2560,7 @@ function pendingPixAgeMs(){
 }
 
 
-function expirePendingPixView(){
+async function expirePendingPixView(){
 
   clearPendingPix();
 
@@ -2518,6 +2590,20 @@ function expirePendingPixView(){
     pay.style.display =
       "none";
   }
+
+  if(!plansLoadedAfterRecovery){
+    await loadPlans();
+    plansLoadedAfterRecovery = true;
+  }
+  setPlansAreaVisible(true);
+
+  const checkoutMessage = document.getElementById("planCheckoutMessage");
+  if(checkoutMessage){
+    checkoutMessage.hidden = false;
+    checkoutMessage.className = "portal-form-message";
+    checkoutMessage.textContent = "O acompanhamento deste PIX terminou. Se ainda não pagou, escolha um plano para gerar um novo código.";
+  }
+  setWizardStep("plans", true);
 
   const qr =
     document.getElementById(
@@ -2704,6 +2790,8 @@ function renderPendingPix(saved){
 
   currentOrder =
     saved.order;
+
+  setWizardStep("payment");
 
   currentPlan =
     saved.plan_name || null;
@@ -3069,6 +3157,8 @@ function showExistingAccess(
 
   pay.style.display =
     "block";
+
+  setWizardStep("payment");
 
 
   const remainingMinutes =
@@ -3909,6 +3999,75 @@ function escapeHtml(value){
     .replace(/'/g, "&#039;");
 }
 
+function setWizardStep(step, shouldScroll=false){
+  const activeStep = ["details", "plans", "payment"].includes(step) ? step : "details";
+  const sections = {
+    details: document.getElementById("customerStep"),
+    plans: document.getElementById("planStep"),
+    payment: document.getElementById("paymentStep")
+  };
+
+  Object.entries(sections).forEach(([key, section]) => {
+    if(section) section.style.display = key === activeStep ? "" : "none";
+  });
+
+  document.querySelectorAll("[data-progress]").forEach(item => {
+    const order = ["details", "plans", "payment"];
+    const itemStep = item.dataset.progress;
+    item.classList.toggle("active", itemStep === activeStep);
+    item.classList.toggle("complete", order.indexOf(itemStep) < order.indexOf(activeStep));
+    if(itemStep === activeStep) item.setAttribute("aria-current", "step");
+    else item.removeAttribute("aria-current");
+  });
+
+  if(shouldScroll && sections[activeStep]){
+    sections[activeStep].scrollIntoView({behavior:"smooth", block:"start"});
+  }
+}
+
+async function continueToPlans(){
+  const form = readRecoveryForm();
+  if(form.name.length < 2){
+    showPortalFormMessage("Informe seu nome para identificar a compra.", "customerName");
+    return;
+  }
+  if(form.phoneDigits.length < 10 || form.phoneDigits.length > 13){
+    showPortalFormMessage("Informe um telefone válido com DDD.", "customerPhone");
+    return;
+  }
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)){
+    showPortalFormMessage("Informe um e-mail válido para receber o comprovante PIX.", "email");
+    return;
+  }
+
+  const continueButton = document.querySelector("#customerStep .wizard-button");
+  if(continueButton) continueButton.disabled = true;
+  try{
+    await recoverExistingAccessSilently();
+    if(currentOrder) return;
+
+    setPlansAreaVisible(true);
+    setWizardStep("plans", true);
+  }
+  finally{
+    if(continueButton) continueButton.disabled = false;
+  }
+}
+
+function backToPlans(){
+  const message = document.getElementById("planCheckoutMessage");
+  const paymentStatus = document.getElementById("payStatus");
+  if(message && paymentStatus?.textContent){
+    message.hidden = false;
+    message.className = "portal-form-message error";
+    message.textContent = paymentStatus.textContent;
+  }
+  document.getElementById("paymentBackButton")?.setAttribute("hidden", "");
+  document.getElementById("pay").style.display = "none";
+  setPaymentViewActive(false);
+  setWizardStep("plans", true);
+}
+
 function updatePixCountdown(){
   const element = document.getElementById("pixExpiry");
   if(!element) return;
@@ -4690,6 +4849,11 @@ async function buy(
         "pay"
       );
 
+  setWizardStep("payment");
+  document.getElementById("paymentBackButton")?.setAttribute("hidden", "");
+  const checkoutMessage = document.getElementById("planCheckoutMessage");
+  if(checkoutMessage) checkoutMessage.hidden = true;
+
   pay.style.display =
     "block";
 
@@ -4788,6 +4952,7 @@ async function buy(
       );
 
       unlockCustomerFields();
+      document.getElementById("paymentBackButton")?.removeAttribute("hidden");
 
       return;
 
@@ -4911,6 +5076,7 @@ async function buy(
     );
 
     unlockCustomerFields();
+    document.getElementById("paymentBackButton")?.removeAttribute("hidden");
 
   }
 
@@ -6752,6 +6918,8 @@ new MutationObserver(records => records.forEach(record => {
 
 async function startPortal(){
 
+  setWizardStep("details");
+
   // ==========================================================
   // FUNIL: PORTAL ABERTO
   // ==========================================================
@@ -6873,6 +7041,8 @@ async function startPortal(){
   // - se encontrar um plano ativo, os planos sao ocultados e o
   //   acesso existente e reaplicado sem gerar novo PIX.
   // ==========================================================
+
+  setWizardStep("details");
 
   await loadPlans();
 
