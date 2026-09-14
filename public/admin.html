@@ -1629,12 +1629,39 @@ body::before{
 }
 
 .menu button{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
   border-color:transparent;
   border-radius:11px;
   background:transparent;
   color:#aebbd0;
   letter-spacing:.01em;
 }
+
+.menu-icon{
+  width:18px;
+  height:18px;
+  flex:0 0 auto;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+.empty-state{display:grid;justify-items:center;gap:8px;padding:24px 18px;text-align:center;border:1px dashed rgba(100,116,139,.52);border-radius:14px;color:#94a3b8;background:rgba(7,17,31,.56)}
+.empty-state strong{color:#e2e8f0;font-size:14px}
+.empty-state p{margin:0;max-width:520px;font-size:12px;line-height:1.55}
+.empty-state button,.dashboard-alert button{border:1px solid rgba(96,165,250,.45);border-radius:9px;padding:8px 12px;background:rgba(37,99,235,.18);color:#bfdbfe;font:inherit;font-weight:700;cursor:pointer}
+.dashboard-alerts{display:grid;gap:9px;margin-bottom:12px}
+.dashboard-alert{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;border:1px solid rgba(245,158,11,.38);border-radius:12px;background:linear-gradient(100deg,rgba(120,53,15,.28),rgba(15,27,46,.72))}
+.dashboard-alert strong{display:block;color:#fde68a;font-size:13px}
+.dashboard-alert span{display:block;margin-top:3px;color:#cbd5e1;font-size:12px}
+.dashboard-alert.error{border-color:rgba(248,113,113,.4);background:linear-gradient(100deg,rgba(127,29,29,.28),rgba(15,27,46,.72))}
+.dashboard-alert.error strong{color:#fecaca}
+@media(max-width:520px){.dashboard-alert{align-items:flex-start;flex-direction:column}.dashboard-alert button{width:100%}}
 
 .menu button:hover{
   border-color:rgba(96,165,250,.24);
@@ -2887,19 +2914,20 @@ button:focus-visible,
         <div>
           <h2>Auditoria administrativa</h2>
           <div style="margin-top:4px;font-size:12px;color:#64748b;">
-            Acoes autenticadas de criacao, alteracao e remocao feitas no painel.
+            Ações autenticadas de criação, alteração e remoção feitas no painel.
           </div>
         </div>
-        <span id="adminAuditCount" style="font-size:12px;color:#94a3b8;">0 acoes</span>
+        <span id="adminAuditCount" style="font-size:12px;color:#94a3b8;">0 ações</span>
       </div>
       <div class="section-body">
+        <input id="adminAuditSearch" type="search" oninput="renderAdminAudit()" placeholder="Buscar usuário, ação, resultado ou IP..." aria-label="Buscar na auditoria administrativa" style="width:100%;margin-bottom:12px;">
         <div class="table-wrap desktop-table">
           <table>
             <thead>
               <tr>
                 <th>Data</th>
-                <th>Usuario</th>
-                <th>Acao</th>
+                <th>Usuário</th>
+                <th>Ação</th>
                 <th>Resultado</th>
                 <th>IP</th>
               </tr>
@@ -5561,6 +5589,9 @@ function renderEvents(){
   if(
     events.length === 0
   ){
+
+    container.innerHTML = `<div class="empty-state"><strong>Nenhum evento cadastrado</strong><p>Cadastre um evento para configurar planos, MikroTik e acesso Wi-Fi.</p><button type="button" onclick="document.getElementById('newEventButton')?.click()">Criar primeiro evento</button></div>`;
+    return;
 
     container.innerHTML = `
 
@@ -16404,20 +16435,7 @@ function renderDashboardEventStatus(
     activeEvents.length === 0
   ){
 
-    container.innerHTML = `
-      <div
-        style="
-          padding:20px;
-          text-align:center;
-          color:#64748b;
-          border:1px dashed #334155;
-          border-radius:12px;
-          background:#07111f;
-        "
-      >
-        Nenhum evento ativo.
-      </div>
-    `;
+    container.innerHTML = `<div class="empty-state"><strong>Nenhum evento ativo</strong><p>Crie ou ative um evento para acompanhar as vendas e o status da MikroTik nesta tela.</p><button type="button" onclick="showPanel('events',document.querySelector('.menu button[data-panel=events]'))">Ir para eventos</button></div>`;
 
     return;
 
@@ -16432,8 +16450,19 @@ function renderDashboardEventStatus(
       : [];
 
 
+  const alertItems = [];
+  const withoutRouter = activeEvents.filter(eventItem => !routerItems.some(router => Number(router?.event_id) === Number(eventItem?.id) || String(router?.event_key || "") === String(eventItem?.event_key || "")));
+  withoutRouter.forEach(eventItem => alertItems.push({title:`${eventItem?.name || `Evento ${eventItem?.id}`} sem MikroTik`, detail:"Cadastre ou vincule o roteador para monitorar o acesso.", eventId:Number(eventItem?.id), error:true}));
+  activeEvents.forEach(eventItem => {
+    const router = routerItems.find(item => Number(item?.event_id) === Number(eventItem?.id) || String(item?.event_key || "") === String(eventItem?.event_key || ""));
+    if(router && router.router_online !== true) alertItems.push({title:`${eventItem?.name || `Evento ${eventItem?.id}`}: MikroTik offline`, detail:"Verifique energia, conexão e credenciais do roteador.", eventId:Number(eventItem?.id), error:true});
+  });
+  const pendingCount = orders.filter(order => String(order.status || "") === "approved_pending_router").length;
+  if(pendingCount) alertItems.push({title:`${pendingCount} liberação(ões) pendente(s)`, detail:"Há pagamento aprovado aguardando a liberação do acesso.", panel:"devices"});
+  const alertsHtml = alertItems.length ? `<div class="dashboard-alerts">${alertItems.map(alert => `<div class="dashboard-alert${alert.error ? " error" : ""}"><div><strong>${escapeHtml(alert.title)}</strong><span>${escapeHtml(alert.detail)}</span></div><button type="button" onclick="${alert.eventId ? `openEventFromDashboard(${alert.eventId})` : `showPanel('devices',document.querySelector('.menu button[data-panel=devices]'))`}">Verificar</button></div>`).join("")}</div>` : "";
+
   container.innerHTML =
-    activeEvents.map(
+    alertsHtml + activeEvents.map(
       eventItem => {
 
         const eventId =
@@ -17359,18 +17388,14 @@ function renderPayments(){
     rows.length === 0
   ){
 
-    table.innerHTML = `
-      <tr>
-        <td colspan="7">
-          Nenhum pagamento recebido encontrado.
-        </td>
-      </tr>
-    `;
+    table.innerHTML = `<tr><td colspan="7"><div class="empty-state"><strong>Nenhum pagamento encontrado</strong><p>Confira o período, o evento selecionado ou a busca digitada.</p><button type="button" onclick="document.getElementById('paymentsPeriodFilter').value='all';document.getElementById('paymentsEventFilter').value='all';document.getElementById('search').value='';applyPaymentsFilters()">Limpar filtros</button></div></td></tr>`;
 
 
     mobile.innerHTML = `
-      <div class="loading">
-        Nenhum pagamento recebido encontrado.
+      <div class="empty-state">
+        <strong>Nenhum pagamento encontrado</strong>
+        <p>Confira o período, o evento selecionado ou a busca digitada.</p>
+        <button type="button" onclick="document.getElementById('paymentsPeriodFilter').value='all';document.getElementById('paymentsEventFilter').value='all';document.getElementById('search').value='';applyPaymentsFilters()">Limpar filtros</button>
       </div>
     `;
 
@@ -18732,8 +18757,8 @@ function renderLogs(){
   }
 
   if(groups.length === 0){
-    table.innerHTML = `<tr><td colspan="7">Nenhum dispositivo encontrado.</td></tr>`;
-    mobile.innerHTML = `<div class="loading">Nenhum dispositivo encontrado.</div>`;
+    table.innerHTML = `<tr><td colspan="7"><div class="empty-state"><strong>Nenhum dispositivo encontrado</strong><p>Altere a busca ou os filtros de data, evento e tipo para ver outros registros.</p><button type="button" onclick="document.getElementById('logSearch').value='';document.getElementById('logPeriodFilter').value='all';document.getElementById('logEventFilter').value='all';document.getElementById('logStatusFilter').value='';renderLogs()">Limpar filtros</button></div></td></tr>`;
+    mobile.innerHTML = `<div class="empty-state"><strong>Nenhum dispositivo encontrado</strong><p>Altere a busca ou os filtros de data, evento e tipo para ver outros registros.</p><button type="button" onclick="document.getElementById('logSearch').value='';document.getElementById('logPeriodFilter').value='all';document.getElementById('logEventFilter').value='all';document.getElementById('logStatusFilter').value='';renderLogs()">Limpar filtros</button></div>`;
     return;
   }
 
@@ -18857,31 +18882,34 @@ function renderLogs(){
 
 
 function renderAdminAudit(){
-  const entries = Array.isArray(adminAudit) ? adminAudit : [];
+  const search = String(document.getElementById("adminAuditSearch")?.value || "").trim().toLowerCase();
+  const entries = (Array.isArray(adminAudit) ? adminAudit : []).filter(entry => !search || [entry.actor, entry.method, entry.route, entry.status_code, entry.ip, describeAdminAuditAction(entry)].join(" ").toLowerCase().includes(search));
   const count = document.getElementById("adminAuditCount");
   const table = document.getElementById("adminAuditTable");
   const mobile = document.getElementById("adminAuditMobile");
 
   if(count){
-    count.textContent = `${entries.length} acoes recentes`;
+    count.textContent = `${entries.length} ação(ões) recentes`;
   }
   if(!table || !mobile){
     return;
   }
   if(entries.length === 0){
-    table.innerHTML = '<tr><td colspan="5">Nenhuma acao administrativa registrada.</td></tr>';
-    mobile.innerHTML = '<div class="loading">Nenhuma acao administrativa registrada.</div>';
+    const emptyMessage = search ? "Nenhuma ação corresponde à busca." : "Nenhuma ação administrativa registrada.";
+    table.innerHTML = `<tr><td colspan="5"><div class="empty-state"><strong>${emptyMessage}</strong><p>As alterações administrativas aparecerão aqui com usuário, resultado e endereço IP.</p></div></td></tr>`;
+    mobile.innerHTML = `<div class="empty-state"><strong>${emptyMessage}</strong><p>As alterações administrativas aparecerão aqui com usuário, resultado e endereço IP.</p></div>`;
     return;
   }
 
   table.innerHTML = entries.map(entry => {
     const status = Number(entry.status_code || 0);
-    const label = status >= 200 && status < 400 ? "Concluida" : `Falhou (${status})`;
+    const label = status >= 200 && status < 400 ? "Concluída" : `Falhou (${status})`;
+    const action = describeAdminAuditAction(entry);
     return `
       <tr>
         <td>${escapeHtml(dateBR(entry.created_at))}</td>
         <td>${escapeHtml(entry.actor || "-")}</td>
-        <td><strong>${escapeHtml(entry.method || "")}</strong> ${escapeHtml(entry.route || "")}</td>
+        <td>${escapeHtml(action)}</td>
         <td>${escapeHtml(label)}</td>
         <td>${escapeHtml(entry.ip || "-")}</td>
       </tr>
@@ -18891,16 +18919,35 @@ function renderAdminAudit(){
   mobile.innerHTML = entries.map(entry => {
     const status = Number(entry.status_code || 0);
     const label = status >= 200 && status < 400 ? "Concluida" : `Falhou (${status})`;
+    const action = describeAdminAuditAction(entry);
     return `
       <div class="order-card">
         <div style="color:#94a3b8;font-size:12px;">${escapeHtml(dateBR(entry.created_at))}</div>
-        <div style="margin-top:6px;font-weight:bold;">${escapeHtml(entry.method || "")} ${escapeHtml(entry.route || "")}</div>
-        <div class="order-row"><span class="order-label">Usuario</span><span class="order-value">${escapeHtml(entry.actor || "-")}</span></div>
+        <div style="margin-top:6px;font-weight:bold;">${escapeHtml(action)}</div>
+        <div class="order-row"><span class="order-label">Usuário</span><span class="order-value">${escapeHtml(entry.actor || "-")}</span></div>
         <div class="order-row"><span class="order-label">Resultado</span><span class="order-value">${escapeHtml(label)}</span></div>
         <div class="order-row"><span class="order-label">IP</span><span class="order-value">${escapeHtml(entry.ip || "-")}</span></div>
       </div>
     `;
   }).join("");
+}
+
+function describeAdminAuditAction(entry){
+  const method = String(entry?.method || "").toUpperCase();
+  const route = String(entry?.route || "").split("?")[0];
+  const rules = [
+    [/\/admin\/api\/plans(?:\/|$)/, "Plano atualizado"],
+    [/\/admin\/api\/events(?:\/|$)/, method === "POST" ? "Evento criado" : method === "DELETE" ? "Evento removido" : "Evento atualizado"],
+    [/\/admin\/api\/(?:internet-v2|routers)(?:\/|$)/, "Configuração da MikroTik atualizada"],
+    [/\/admin\/api\/orders(?:\/|$)/, "Pedido atualizado"],
+    [/\/admin\/api\/(?:devices|clients)(?:\/|$)/, "Dispositivo atualizado"],
+    [/\/admin\/api\/(?:settings|config)(?:\/|$)/, "Configuração do sistema atualizada"]
+  ];
+  const match = rules.find(([pattern]) => pattern.test(route));
+  if(match) return match[1];
+  const verb = {POST:"Criou", PUT:"Atualizou", PATCH:"Alterou", DELETE:"Removeu"}[method] || "Alterou";
+  const resource = route.split("/").filter(Boolean).slice(-1)[0] || "registro";
+  return `${verb}: ${resource.replace(/[-_]/g, " ").replace(/api/i, "painel")}`;
 }
 
 
@@ -28374,6 +28421,8 @@ function renderEventDevices(){
 
 function bindEvents(){
 
+  applyConsistentMenuIcons();
+
   // ==========================================================
   // MENU
   // ==========================================================
@@ -28547,6 +28596,23 @@ function bindEvents(){
 
   updateReleaseButton();
 
+}
+
+function applyConsistentMenuIcons(){
+  const icons = {
+    dashboard:'<rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="5" rx="1"/><rect x="13" y="10" width="8" height="11" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/>',
+    devices:'<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 18h4"/>',
+    payments:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 9h20m-16 6h4"/>',
+    events:'<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 9h18m-14 4h3m-3 4h7"/>',
+    logs:'<path d="M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8l-5-5H8z"/><path d="M16 3v5h5M8 13h8m-8 4h8"/>'
+  };
+  document.querySelectorAll(".menu button[data-panel]").forEach(button => {
+    const panel = button.dataset.panel;
+    const label = {dashboard:"Dashboard",devices:"Dispositivos",payments:"Pagamentos",events:"Eventos",logs:"Logs"}[panel];
+    if(!label || !icons[panel]) return;
+    button.innerHTML = `<svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true">${icons[panel]}</svg><span>${label}</span>`;
+    button.setAttribute("aria-label", label);
+  });
 }
 
 
