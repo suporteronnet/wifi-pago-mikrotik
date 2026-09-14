@@ -18627,6 +18627,8 @@ app.get(
   adminAuth,
   (req, res) => {
 
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+
     res.sendFile(
 
       path.join(
@@ -18647,7 +18649,10 @@ app.get(
 app.get(
   "/admin.html",
   adminAuth,
-  (req, res) => res.sendFile(path.join(__dirname, "public", "admin.html"))
+  (req, res) => {
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+    return res.sendFile(path.join(__dirname, "public", "admin.html"));
+  }
 );
 
 app.use(
