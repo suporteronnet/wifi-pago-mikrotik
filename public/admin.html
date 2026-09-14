@@ -738,6 +738,56 @@ tr:last-child td{
 }
 
 
+/* Formulário do plano: mantém cada informação junto do campo correspondente. */
+#eventPlanModal .plan-editor-form{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  grid-template-areas:
+    "name subtitle"
+    "duration amount"
+    "download upload"
+    "highlight highlight"
+    "help help"
+    "save cancel";
+  gap:14px;
+  align-items:start;
+}
+#eventPlanModal .plan-editor-form > *{min-width:0}
+#eventPlanModal .plan-editor-form > .field{margin:0}
+#eventPlanModal .plan-editor-form input,
+#eventPlanModal .plan-editor-form select{box-sizing:border-box;min-width:0;width:100%}
+#eventPlanModal .plan-form-name{grid-area:name}
+#eventPlanModal .plan-form-subtitle{grid-area:subtitle}
+#eventPlanModal .plan-form-duration{grid-area:duration}
+#eventPlanModal .plan-form-amount{grid-area:amount}
+#eventPlanModal .plan-form-download{grid-area:download}
+#eventPlanModal .plan-form-upload{grid-area:upload}
+#eventPlanModal .plan-form-highlight{grid-area:highlight}
+#eventPlanModal .plan-form-help{grid-area:help}
+#eventPlanModal #savePlanFormButton{grid-area:save}
+#eventPlanModal .plan-form-cancel{grid-area:cancel}
+#eventPlanModal .plan-form-duration-controls{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:10px;
+}
+@media(max-width:600px){
+  #eventPlanModal .plan-editor-form{
+    grid-template-columns:minmax(0,1fr);
+    grid-template-areas:
+      "name"
+      "subtitle"
+      "duration"
+      "amount"
+      "download"
+      "upload"
+      "highlight"
+      "help"
+      "save"
+      "cancel";
+  }
+}
+
 .field label{
 
   color:#94a3b8;
@@ -10192,10 +10242,10 @@ function ensurePlanModal(){
       >
 
         <div
-          class="device-form"
+          class="device-form plan-editor-form"
         >
 
-          <div class="field">
+          <div class="field plan-form-name">
 
             <label for="planFormName">
               Nome do plano
@@ -10210,13 +10260,13 @@ function ensurePlanModal(){
 
           </div>
 
-          <div class="field">
+          <div class="field plan-form-subtitle">
             <label for="planFormSubtitle">Subtítulo ou observação (opcional)</label>
             <input id="planFormSubtitle" type="text" maxlength="120" placeholder="Ex.: Passe-livre durante todo o evento">
             <div style="margin-top:5px;color:#64748b;font-size:11px;">Aparecerá em letras menores logo abaixo do nome do plano.</div>
           </div>
 
-          <div class="field">
+          <div class="field plan-form-highlight">
             <label for="planFormHighlight">Destaque no portal do cliente</label>
             <select id="planFormHighlight" style="width:100%;background:#07111f;color:#fff;border:1px solid #334155;border-radius:12px;padding:13px;outline:none;">
               <option value="">Sem destaque</option>
@@ -10228,7 +10278,7 @@ function ensurePlanModal(){
 
 
           <div
-            class="field"
+            class="field plan-form-duration"
           >
 
             <label for="planFormDurationValue">
@@ -10299,7 +10349,7 @@ function ensurePlanModal(){
 
 
           <div
-            class="field"
+            class="field plan-form-amount"
           >
 
             <label for="planFormAmount">
@@ -10319,7 +10369,7 @@ function ensurePlanModal(){
 
 
           <div
-            class="field"
+            class="field plan-form-download"
           >
 
             <label for="planFormDownload">
@@ -10337,7 +10387,7 @@ function ensurePlanModal(){
 
 
           <div
-            class="field"
+            class="field plan-form-upload"
           >
 
             <label for="planFormUpload">
@@ -10355,6 +10405,7 @@ function ensurePlanModal(){
 
 
           <div
+            class="plan-form-help"
             style="
               padding:12px;
               border-radius:11px;
@@ -10385,6 +10436,7 @@ function ensurePlanModal(){
 
 
           <button
+            class="plan-form-cancel"
             type="button"
             onclick="closeEventPlanModal()"
             style="
