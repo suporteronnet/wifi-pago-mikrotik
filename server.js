@@ -17958,7 +17958,7 @@ app.get(
     const requestedLimit = Number(req.query.limit || 50);
     const limit = Math.max(
       1,
-      Math.min(200, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50)
+      Math.min(5000, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50)
     );
 
     try {
@@ -17973,6 +17973,20 @@ app.get(
     } catch (error) {
       console.error("Erro ao carregar auditoria administrativa:", error.message);
       return res.status(500).json({ ok: false, error: "Erro ao carregar auditoria" });
+    }
+  }
+);
+
+app.delete(
+  "/admin/api/audit",
+  adminAuth,
+  (req, res) => {
+    try {
+      const result = db.prepare("DELETE FROM admin_audit_log").run();
+      return res.json({ ok: true, deleted: Number(result.changes || 0) });
+    } catch (error) {
+      console.error("Erro ao limpar auditoria administrativa:", error.message);
+      return res.status(500).json({ ok: false, error: "Erro ao limpar auditoria" });
     }
   }
 );

@@ -1752,6 +1752,43 @@ body::before{
   letter-spacing:-.025em;
 }
 
+.admin-audit-toolbar{
+  display:grid;
+  grid-template-columns:minmax(180px,1fr) minmax(150px,190px) auto;
+  gap:10px;
+  align-items:center;
+  margin-bottom:12px;
+}
+
+.admin-audit-toolbar input,
+.admin-audit-toolbar select{
+  width:100%;
+  min-width:0;
+  margin:0;
+}
+
+.admin-audit-clear{
+  width:auto;
+  min-height:40px;
+  padding:9px 13px;
+  border:1px solid rgba(248,113,113,.4);
+  border-radius:10px;
+  background:rgba(127,29,29,.24);
+  color:#fecaca;
+  font-weight:700;
+  white-space:nowrap;
+  cursor:pointer;
+}
+
+.admin-audit-clear:hover:not(:disabled){
+  background:rgba(127,29,29,.42);
+}
+
+.admin-audit-clear:disabled{
+  opacity:.6;
+  cursor:wait;
+}
+
 .card,
 .operational-card,
 .dashboard-event-card{
@@ -1849,6 +1886,18 @@ button:focus-visible,
 
   .section-body{
     padding:12px;
+  }
+
+  .admin-audit-toolbar{
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  }
+
+  .admin-audit-toolbar input{
+    grid-column:1 / -1;
+  }
+
+  .admin-audit-clear{
+    width:100%;
   }
 
   .operational-grid{
@@ -2972,7 +3021,16 @@ button:focus-visible,
         <span id="adminAuditCount" style="font-size:12px;color:#94a3b8;">0 ações</span>
       </div>
       <div class="section-body">
-        <input id="adminAuditSearch" type="search" oninput="renderAdminAudit()" placeholder="Buscar usuário, ação, resultado ou IP..." aria-label="Buscar na auditoria administrativa" style="width:100%;margin-bottom:12px;">
+        <div class="admin-audit-toolbar">
+          <input id="adminAuditSearch" type="search" oninput="renderAdminAudit()" placeholder="Buscar usuário, ação, resultado ou IP..." aria-label="Buscar na auditoria administrativa">
+          <select id="adminAuditPeriod" onchange="renderAdminAudit()" aria-label="Filtrar auditoria por período">
+            <option value="7d" selected>Últimos 7 dias</option>
+            <option value="today">Hoje</option>
+            <option value="30d">Últimos 30 dias</option>
+            <option value="all">Todo o período</option>
+          </select>
+          <button id="adminAuditClear" class="admin-audit-clear" type="button" onclick="clearAdminAudit()">Limpar auditoria</button>
+        </div>
         <div class="table-wrap desktop-table">
           <table>
             <thead>
@@ -13974,7 +14032,7 @@ async function loadData(){
     const [ordersResponse, funnelResponse, auditResponse] = await Promise.all([
       fetch("/admin/api/orders", {cache:"no-store"}),
       fetch("/admin/api/funnel/logs?limit=10000", {cache:"no-store"}),
-      fetch("/admin/api/audit?limit=100", {cache:"no-store"})
+      fetch("/admin/api/audit?limit=5000", {cache:"no-store"})
     ]);
 
     if(!ordersResponse.ok){
@@ -18975,19 +19033,29 @@ function renderLogs(){
 
 function renderAdminAudit(){
   const search = String(document.getElementById("adminAuditSearch")?.value || "").trim().toLowerCase();
-  const entries = (Array.isArray(adminAudit) ? adminAudit : []).filter(entry => !search || [entry.actor, entry.method, entry.route, entry.status_code, entry.ip, describeAdminAuditAction(entry)].join(" ").toLowerCase().includes(search));
+  const period = String(document.getElementById("adminAuditPeriod")?.value || "7d");
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const entries = (Array.isArray(adminAudit) ? adminAudit : []).filter(entry => {
+    const createdAt = new Date(entry.created_at);
+    if(Number.isNaN(createdAt.getTime())) return false;
+    if(period === "today" && createdAt < startOfToday) return false;
+    if(period === "7d" && createdAt < new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)) return false;
+    if(period === "30d" && createdAt < new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)) return false;
+    return !search || [entry.actor, entry.method, entry.route, entry.status_code, entry.ip, describeAdminAuditAction(entry)].join(" ").toLowerCase().includes(search);
+  });
   const count = document.getElementById("adminAuditCount");
   const table = document.getElementById("adminAuditTable");
   const mobile = document.getElementById("adminAuditMobile");
 
   if(count){
-    count.textContent = `${entries.length} ação(ões) recentes`;
+    count.textContent = `${entries.length} ação(ões) exibidas`;
   }
   if(!table || !mobile){
     return;
   }
   if(entries.length === 0){
-    const emptyMessage = search ? "Nenhuma ação corresponde à busca." : "Nenhuma ação administrativa registrada.";
+    const emptyMessage = search ? "Nenhuma ação corresponde à busca e ao período selecionado." : period !== "all" ? "Nenhuma ação administrativa neste período." : "Nenhuma ação administrativa registrada.";
     table.innerHTML = `<tr><td colspan="5"><div class="empty-state"><strong>${emptyMessage}</strong><p>As alterações administrativas aparecerão aqui com usuário, resultado e endereço IP.</p></div></td></tr>`;
     mobile.innerHTML = `<div class="empty-state"><strong>${emptyMessage}</strong><p>As alterações administrativas aparecerão aqui com usuário, resultado e endereço IP.</p></div>`;
     return;
@@ -19024,10 +19092,34 @@ function renderAdminAudit(){
   }).join("");
 }
 
+async function clearAdminAudit(){
+  const button = document.getElementById("adminAuditClear");
+  if(!window.confirm("Limpar os registros atuais da auditoria? Esta ação ficará registrada como o primeiro item do novo histórico.")) return;
+
+  if(button) button.disabled = true;
+  try{
+    const response = await fetch("/admin/api/audit", {method:"DELETE", cache:"no-store"});
+    const result = await response.json().catch(() => ({}));
+    if(!response.ok || !result.ok) throw new Error(result.error || "Não foi possível limpar a auditoria.");
+
+    const auditResponse = await fetch("/admin/api/audit?limit=5000", {cache:"no-store"});
+    const auditData = await auditResponse.json().catch(() => ({}));
+    if(!auditResponse.ok || !auditData.ok) throw new Error(auditData.error || "Auditoria limpa, mas não foi possível atualizar a lista.");
+
+    adminAudit = Array.isArray(auditData.entries) ? auditData.entries : [];
+    renderAdminAudit();
+  }catch(error){
+    window.alert(error.message || "Erro ao limpar a auditoria.");
+  }finally{
+    if(button) button.disabled = false;
+  }
+}
+
 function describeAdminAuditAction(entry){
   const method = String(entry?.method || "").toUpperCase();
   const route = String(entry?.route || "").split("?")[0];
   const rules = [
+    [/^\/admin\/api\/audit(?:\/|$)/, method === "DELETE" ? "Auditoria limpa" : "Auditoria consultada"],
     [/\/admin\/api\/plans(?:\/|$)/, "Plano atualizado"],
     [/\/admin\/api\/events(?:\/|$)/, method === "POST" ? "Evento criado" : method === "DELETE" ? "Evento removido" : "Evento atualizado"],
     [/\/admin\/api\/(?:internet-v2|routers)(?:\/|$)/, "Configuração da MikroTik atualizada"],
