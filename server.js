@@ -15162,6 +15162,28 @@ app.get(
               ||
               null;
 
+            const pendingBlockCommand =
+              adminRows.find(
+                adminRow => {
+                  if(
+                    adminRow.command_type !== "BLOCK_NOW"
+                    || adminRow.status !== "pending"
+                    || normalizeMac(adminRow.mac) !== mac
+                  ){
+                    return false;
+                  }
+
+                  const requestedAtMs = Date.parse(adminRow.created_at || "");
+                  return !Number.isFinite(confirmedAtMs)
+                    || !Number.isFinite(requestedAtMs)
+                    || requestedAtMs >= confirmedAtMs;
+                }
+              ) || null;
+
+            if(pendingBlockCommand?.command_ref){
+              absorbedBlockRefs.add(pendingBlockCommand.command_ref);
+            }
+
 
             const blocked =
               Boolean(
@@ -15359,16 +15381,16 @@ app.get(
                   : (
                       expired
                         ? "expired"
-                        : row.status
+                        : pendingBlockCommand
+                          ? "blocking"
+                          : row.status
                     ),
 
               blocked:
                 blocked,
 
               blocked_at:
-                blockCommand?.applied_at
-                ||
-                null,
+                blockCommand?.applied_at || row.access_expired_at || null,
 
               block_command_ref:
                 blockCommand?.command_ref
@@ -22591,19 +22613,28 @@ app.delete(
       );
 
 
-      queuePlanSync(
-        plan.event_id,
-        "DELETE",
-        plan.mikrotik_profile,
-        ""
-      );
+      const profileStillUsed = db.prepare(`
+        SELECT 1 FROM event_plans
+        WHERE event_id=? AND mikrotik_profile=? AND active=1 AND deleted_at IS NULL
+        LIMIT 1
+      `).get(plan.event_id, plan.mikrotik_profile);
+
+      if(!profileStillUsed){
+        queuePlanSync(
+          plan.event_id,
+          "DELETE",
+          plan.mikrotik_profile,
+          ""
+        );
+      }
 
 
       return res.json({
         ok:true,
         deleted:true,
         plan_id:planId,
-        profile:plan.mikrotik_profile
+        profile:plan.mikrotik_profile,
+        profile_still_used:Boolean(profileStillUsed)
       });
 
     }
@@ -22627,6 +22658,47 @@ app.delete(
 
   }
 );
+
+app.post("/admin/api/events/:eventId/plans/reconcile-deleted", adminAuth, (req,res) => {
+  const eventId = positiveId(req.params.eventId);
+  if(!eventId || !getEventById(eventId)){
+    return res.status(404).json({ok:false,error:"Evento não encontrado"});
+  }
+
+  const deletedProfiles = db.prepare(`
+    SELECT DISTINCT old_plan.mikrotik_profile AS profile
+    FROM event_plans old_plan
+    WHERE old_plan.event_id=?
+      AND old_plan.deleted_at IS NOT NULL
+      AND old_plan.mikrotik_profile<>''
+      AND NOT EXISTS (
+        SELECT 1 FROM event_plans active_plan
+        WHERE active_plan.event_id=old_plan.event_id
+          AND active_plan.mikrotik_profile=old_plan.mikrotik_profile
+          AND active_plan.active=1
+          AND active_plan.deleted_at IS NULL
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM orders o
+        JOIN event_plans used_plan ON used_plan.event_id=o.event_id AND used_plan.plan_key=o.plan_id
+        WHERE o.event_id=old_plan.event_id
+          AND used_plan.mikrotik_profile=old_plan.mikrotik_profile
+          AND used_plan.deleted_at IS NOT NULL
+          AND (
+            o.status='approved_pending_router'
+            OR (o.status='approved' AND o.access_expires_at IS NOT NULL
+              AND o.access_expired_at IS NULL AND o.access_expires_at>?)
+          )
+      )
+  `).all(eventId, nowIso());
+
+  let queued = 0;
+  for(const row of deletedProfiles){
+    if(queuePlanSync(eventId,"DELETE",row.profile,"")) queued++;
+  }
+
+  res.json({ok:true,profiles:deletedProfiles.length,queued});
+});
 
 
 // ============================================================

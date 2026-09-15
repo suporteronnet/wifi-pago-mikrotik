@@ -10025,12 +10025,20 @@ function renderEventPlans(plans){
 
   setupVoucherManager(plans);
 
+  const deletedPlanSyncControl = `
+    <div style="margin-bottom:10px;padding:10px;border:1px solid #334155;border-radius:10px;background:#0b1728;">
+      <button type="button" onclick="reconcileDeletedEventPlans()" style="padding:8px 10px;border:1px solid #475569;border-radius:8px;background:#172338;color:#e2e8f0;cursor:pointer;">Sincronizar exclusões antigas com a MikroTik</button>
+      <div style="margin-top:5px;color:#94a3b8;font-size:11px;">Reenvia a remoção de perfis de planos já apagados, incluindo sessões/usuários antigos ligados a eles.</div>
+      <div id="deletedPlanSyncMessage" style="margin-top:5px;font-size:11px;"></div>
+    </div>
+  `;
+
 
   if(
     plans.length === 0
   ){
 
-    container.innerHTML = `
+    container.innerHTML = deletedPlanSyncControl + `
       <div class="loading">
         Nenhum plano cadastrado neste evento.
       </div>
@@ -10042,7 +10050,7 @@ function renderEventPlans(plans){
   }
 
 
-  container.innerHTML =
+  container.innerHTML = deletedPlanSyncControl +
     plans.map(
       plan => {
 
@@ -10891,6 +10899,33 @@ function clearEventPlanForm(){
 
   }
 
+}
+
+async function reconcileDeletedEventPlans(){
+  if(!currentEventId) return;
+  const confirmed = window.confirm(
+    "Reenviar a limpeza de todos os planos já apagados deste evento? A MikroTik desconectará e removerá usuários HotSpot associados aos perfis excluídos."
+  );
+  if(!confirmed) return;
+
+  const message = document.getElementById("deletedPlanSyncMessage");
+  if(message) message.textContent = "Enfileirando limpeza para a MikroTik...";
+  try{
+    const response = await fetch(`/admin/api/events/${currentEventId}/plans/reconcile-deleted`,{method:"POST"});
+    const data = await response.json();
+    if(!response.ok || !data.ok) throw new Error(data.error || "Falha ao enfileirar a limpeza.");
+    if(message){
+      message.style.color = "#4ade80";
+      message.textContent = data.queued
+        ? `${data.queued} perfil(is) enfileirado(s). A MikroTik removerá usuários e sessões em até alguns ciclos de sincronização.`
+        : "Nenhum perfil excluído pendente para sincronização.";
+    }
+  }catch(error){
+    if(message){
+      message.style.color = "#f87171";
+      message.textContent = error.message;
+    }
+  }
 }
 
 
@@ -12082,7 +12117,7 @@ async function deleteEventPlan(
 
   const confirmed =
     window.confirm(
-      `Excluir o plano "${plan.name}"?\n\nEle desaparecerá do painel e do portal. O histórico de pagamentos será preservado. Se houver cliente PIX ainda ativo nesse plano, a exclusão será bloqueada.`
+      `Excluir o plano "${plan.name}"?\n\nEle desaparecerá do painel e do portal. O histórico de pagamentos será preservado. Depois da sincronização, a MikroTik removerá o perfil, as sessões e os usuários associados. Se houver cliente com acesso ainda ativo, a exclusão será bloqueada.`
     );
 
 
@@ -19386,6 +19421,7 @@ function describeAdminAuditAction(entry){
   const rules = [
     [/^\/admin\/api\/audit(?:\/|$)/, method === "DELETE" ? "Auditoria limpa" : "Auditoria consultada"],
     [/\/admin\/api\/(?:events\/\d+\/voucher-batches|voucher-batches)(?:\/|$)/, method === "DELETE" ? "Lote de vouchers apagado" : method === "POST" ? "Lote de vouchers gerado" : "Lote de vouchers atualizado"],
+    [/\/admin\/api\/events\/\d+\/plans\/reconcile-deleted(?:\/|$)/, "Limpeza de planos reenviada à MikroTik"],
     [/\/admin\/api\/plans(?:\/|$)/, "Plano atualizado"],
     [/\/admin\/api\/events(?:\/|$)/, method === "POST" ? "Evento criado" : method === "DELETE" ? "Evento removido" : "Evento atualizado"],
     [/\/admin\/api\/(?:internet-v2|routers)(?:\/|$)/, "Configuração da MikroTik atualizada"],
@@ -20189,6 +20225,18 @@ function buildMikrotikPullScript(
   lines.push('        :local ref [:pick $data ($sep + 2) [:len $data]];');
   lines.push('');
   lines.push('        :if (($profile!="") && ($ref!="")) do={');
+  lines.push('          # Remove sessoes e usuarios HotSpot que usam este plano excluido.');
+  lines.push('          :foreach userId in=[/ip hotspot user find where profile=$profile] do={');
+  lines.push('            :local userName [/ip hotspot user get $userId name];');
+  lines.push('            :foreach activeId in=[/ip hotspot active find where user=$userName] do={');
+  lines.push('              /ip hotspot active remove $activeId;');
+  lines.push('            };');
+  lines.push('            :foreach cookieId in=[/ip hotspot cookie find where user=$userName] do={');
+  lines.push('              /ip hotspot cookie remove $cookieId;');
+  lines.push('            };');
+  lines.push('            /ip hotspot user remove $userId;');
+  lines.push('          };');
+  lines.push('');
   lines.push('          :foreach profileId in=[/ip hotspot user profile find where name=$profile] do={');
   lines.push('            /ip hotspot user profile remove $profileId;');
   lines.push('          };');
@@ -24162,6 +24210,27 @@ function renderDevices(){
 
 
         // ====================================================
+        // PIX / VOUCHER - ACESSO ENCERRADO MANUALMENTE
+        // ====================================================
+
+        if(
+          isPix &&
+          device.status === "blocked"
+        ){
+          statusText = "Bloqueado";
+          statusClass = "badge-blocked";
+          detailsHtml = `
+            <div class="device-date">Pagamento: ${escapeHtml(paymentLabel)}</div>
+            <div class="device-date">Plano: ${escapeHtml(device.plan_name || adminTimeLabel(device.minutes))}</div>
+            <div class="device-date">Valor: ${paymentValue}</div>
+            <div class="device-date">Liberado em: ${dateBR(device.confirmed_at || device.applied_at)}</div>
+            <div class="device-date">Bloqueado em: ${dateBR(device.blocked_at || device.access_expired_at)}</div>
+          `;
+          buttons = "";
+        }
+
+
+        // ====================================================
         // PIX - ATIVO
         // ====================================================
 
@@ -24302,6 +24371,22 @@ function renderDevices(){
 
           `;
 
+        }
+
+
+        if(
+          isPix &&
+          device.status === "blocking"
+        ){
+          statusText = "Bloqueando";
+          statusClass = "badge-pending";
+          detailsHtml = `
+            <div class="device-date">Pagamento: ${escapeHtml(paymentLabel)}</div>
+            <div class="device-date">Plano: ${escapeHtml(device.plan_name || adminTimeLabel(device.minutes))}</div>
+            <div class="device-date">Valor: ${paymentValue}</div>
+            <div class="device-date">Aguardando a MikroTik encerrar o acesso.</div>
+          `;
+          buttons = "";
         }
 
 
@@ -27669,6 +27754,17 @@ function renderEventDevices(){
           device.command_type ===
           "PIX";
 
+        const isVoucher =
+          device.payment_method === "voucher";
+
+        const paymentLabel =
+          isVoucher
+            ? `Voucher #${Number(device.voucher_serial) || "?"}`
+            : "PIX";
+
+        const paymentValue =
+          isVoucher ? "Voucher" : money(device.amount);
+
 
         const remainingSeconds =
           Number(
@@ -27745,7 +27841,7 @@ function renderEventDevices(){
 
             <div class="device-date">
               Pagamento:
-              PIX
+              ${escapeHtml(paymentLabel)}
             </div>
 
             <div class="device-date">
@@ -27760,9 +27856,7 @@ function renderEventDevices(){
 
             <div class="device-date">
               Valor:
-              ${money(
-                device.amount
-              )}
+              ${paymentValue}
             </div>
 
             <div class="device-date">
@@ -27824,7 +27918,7 @@ function renderEventDevices(){
 
             <div class="device-date">
               Pagamento:
-              PIX
+              ${escapeHtml(paymentLabel)}
             </div>
 
             <div class="device-date">
@@ -27839,9 +27933,7 @@ function renderEventDevices(){
 
             <div class="device-date">
               Valor:
-              ${money(
-                device.amount
-              )}
+              ${paymentValue}
             </div>
 
             <div class="device-date">
@@ -27886,7 +27978,7 @@ function renderEventDevices(){
               data-mac="${escapeHtml(
                 device.mac || ""
               )}"
-              data-name="Cliente PIX"
+              data-name="${escapeHtml(device.device_name || (isVoucher ? paymentLabel : "Cliente PIX"))}"
             >
 
               ⛔ ENCERRAR ACESSO AGORA
@@ -27921,7 +28013,7 @@ function renderEventDevices(){
 
             <div class="device-date">
               Pagamento:
-              PIX aprovado
+              ${escapeHtml(isVoucher ? paymentLabel : "PIX aprovado")}
             </div>
 
             <div class="device-date">
@@ -27936,9 +28028,7 @@ function renderEventDevices(){
 
             <div class="device-date">
               Valor:
-              ${money(
-                device.amount
-              )}
+              ${paymentValue}
             </div>
 
             <div class="device-date">
@@ -27947,6 +28037,22 @@ function renderEventDevices(){
 
           `;
 
+        }
+
+
+        if(
+          isPix &&
+          device.status === "blocking"
+        ){
+          statusText = "Bloqueando";
+          statusClass = "badge-pending";
+          detailsHtml = `
+            <div class="device-date">Pagamento: ${escapeHtml(paymentLabel)}</div>
+            <div class="device-date">Plano: ${escapeHtml(device.plan_name || adminTimeLabel(device.minutes))}</div>
+            <div class="device-date">Valor: ${paymentValue}</div>
+            <div class="device-date">Aguardando a MikroTik encerrar o acesso.</div>
+          `;
+          buttons = "";
         }
 
 
@@ -27971,7 +28077,7 @@ function renderEventDevices(){
 
             <div class="device-date">
               Pagamento:
-              PIX
+              ${escapeHtml(paymentLabel)}
             </div>
 
             <div class="device-date">
@@ -27986,9 +28092,7 @@ function renderEventDevices(){
 
             <div class="device-date">
               Valor:
-              ${money(
-                device.amount
-              )}
+              ${paymentValue}
             </div>
 
             <div class="device-date">
