@@ -8793,6 +8793,28 @@ function ensureRouterModal(){
             </select>
           </div>
 
+          <div class="field router-top-field">
+            <label for="routerFormHotspotDnsName">Domínio do HotSpot (HTTPS / iPhone)</label>
+            <input
+              id="routerFormHotspotDnsName"
+              type="text"
+              maxlength="253"
+              placeholder="Ex.: router.sn.mynetname.net"
+            >
+            <small style="display:block;margin-top:5px;color:#64748b;line-height:1.4;">Use o mesmo domínio DDNS configurado no MikroTik em IP &gt; Cloud. Deixe vazio para não usar certificado.</small>
+          </div>
+
+          <div class="field router-top-field">
+            <label for="routerFormHotspotSslCertificate">Nome do certificado SSL no MikroTik</label>
+            <input
+              id="routerFormHotspotSslCertificate"
+              type="text"
+              maxlength="200"
+              placeholder="Ex.: acme_cert_router.sn.mynetname.net"
+            >
+            <small style="display:block;margin-top:5px;color:#64748b;line-height:1.4;">Informe o nome exibido em /certificate print. O certificado e a chave privada ficam no roteador.</small>
+          </div>
+
           <input type="hidden" id="routerFormWan" value="ether1">
           <input type="hidden" id="routerFormClients" value="ether2">
           <input type="hidden" id="routerFormPrimaryWanType" value="pppoe">
@@ -9174,7 +9196,9 @@ function fillRouterForm(router){
     routerFormGateway:router?.client_gateway || suggested.gateway,
     routerFormPoolStart:router?.dhcp_pool_start || suggested.poolStart,
     routerFormPoolEnd:router?.dhcp_pool_end || suggested.poolEnd,
-    routerFormReservedIps:router?.reserved_ips || ""
+    routerFormReservedIps:router?.reserved_ips || "",
+    routerFormHotspotDnsName:router?.hotspot_dns_name || "",
+    routerFormHotspotSslCertificate:router?.hotspot_ssl_certificate || ""
   };
 
   Object.entries(values).forEach(([id,value]) => {
@@ -9411,6 +9435,8 @@ async function saveEventRouter(){
   const poolStart=document.getElementById("routerFormPoolStart")?.value?.trim();
   const poolEnd=document.getElementById("routerFormPoolEnd")?.value?.trim();
   const reservedIps=document.getElementById("routerFormReservedIps")?.value?.trim() || "";
+  const hotspotDnsName=document.getElementById("routerFormHotspotDnsName")?.value?.trim().toLowerCase() || "";
+  const hotspotSslCertificate=document.getElementById("routerFormHotspotSslCertificate")?.value?.trim() || "";
 
   const failoverEnabled =
     Boolean(document.getElementById("routerFormFailover")?.checked);
@@ -9452,6 +9478,22 @@ async function saveEventRouter(){
   if(!network || !gateway || !poolStart || !poolEnd){
     if(message){
       message.textContent="Confira a rede, gateway e faixa DHCP.";
+      message.style.color="#f87171";
+    }
+    return;
+  }
+
+  if(Boolean(hotspotDnsName) !== Boolean(hotspotSslCertificate)){
+    if(message){
+      message.textContent="Informe juntos o domínio do HotSpot e o nome do certificado SSL, ou deixe os dois vazios.";
+      message.style.color="#f87171";
+    }
+    return;
+  }
+
+  if(hotspotDnsName && !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(hotspotDnsName)){
+    if(message){
+      message.textContent="Informe um domínio completo válido, por exemplo router.sn.mynetname.net.";
       message.style.color="#f87171";
     }
     return;
@@ -9519,6 +9561,8 @@ async function saveEventRouter(){
     client_interface:hotspotPort?.interface_name || "ether2",
     client_network:network,
     client_gateway:gateway,
+    hotspot_dns_name:hotspotDnsName,
+    hotspot_ssl_certificate:hotspotSslCertificate,
     dhcp_pool_start:poolStart,
     dhcp_pool_end:poolEnd,
     reserved_ips:reservedIps,
@@ -19054,6 +19098,7 @@ function renderAdminAudit(){
   if(!table || !mobile){
     return;
   }
+
   if(entries.length === 0){
     const emptyMessage = search ? "Nenhuma ação corresponde à busca e ao período selecionado." : period !== "all" ? "Nenhuma ação administrativa neste período." : "Nenhuma ação administrativa registrada.";
     table.innerHTML = `<tr><td colspan="5"><div class="empty-state"><strong>${emptyMessage}</strong><p>As alterações administrativas aparecerão aqui com usuário, resultado e endereço IP.</p></div></td></tr>`;
@@ -19620,6 +19665,19 @@ function buildMikrotikPullScript(
       ""
     );
 
+  const hasHotspotCertificate =
+    Boolean(String(router?.hotspot_ssl_certificate || "").trim());
+
+  const hotspotLoginBy =
+    hasHotspotCertificate
+      ? "mac,cookie,http-chap,https,http-pap"
+      : "mac,cookie,http-chap,http-pap";
+
+  const hotspotCertificateSetting =
+    hasHotspotCertificate
+      ? `ssl-certificate="${routerOsQuote(router.hotspot_ssl_certificate)}"`
+      : "ssl-certificate=none";
+
 
   if(
     !routerKey
@@ -20003,7 +20061,7 @@ function buildMikrotikPullScript(
   );
 
   lines.push(
-  `/ip hotspot profile set [find name="hsprof-wifi-pago"] login-by=mac,cookie,http-chap,http-pap mac-auth-mode=mac-as-username-and-password`
+  `/ip hotspot profile set [find name="hsprof-wifi-pago"] login-by=${hotspotLoginBy} ${hotspotCertificateSetting} mac-auth-mode=mac-as-username-and-password`
 );
 
   lines.push(
@@ -20810,6 +20868,14 @@ function buildSingleMikrotikNetworkScript(eventData, router){
   const secondaryStaticGateway=routerOsSafe(router.secondary_wan_static_gateway || secondaryPort?.static_gateway || "");
 
   const gateway=routerOsSafe(router.client_gateway);
+  const hotspotDnsName=routerOsSafe(router.hotspot_dns_name || "wifi.pago");
+  const hotspotCertificate=String(router.hotspot_ssl_certificate || "").trim();
+  const hotspotLoginBy=hotspotCertificate
+    ? "mac,cookie,http-chap,https,http-pap"
+    : "mac,cookie,http-chap,http-pap";
+  const hotspotCertificateSetting=hotspotCertificate
+    ? `ssl-certificate="${routerOsQuote(hotspotCertificate)}"`
+    : "ssl-certificate=none";
   const clientNetwork=routerOsSafe(router.client_network);
   const poolStart=routerOsSafe(router.dhcp_pool_start);
   const poolEnd=routerOsSafe(router.dhcp_pool_end);
@@ -20922,7 +20988,7 @@ function buildSingleMikrotikNetworkScript(eventData, router){
     `/ip dhcp-server network add address=${clientNetwork} gateway=${gateway} dns-server=${gateway} comment="WIFI-PAGO-DHCP"`,
     '/ip dns set servers=1.1.1.1,8.8.8.8 allow-remote-requests=yes cache-size=8192KiB',
     '/ip dns static remove [find comment="WIFI-PAGO-PORTAL-LOCAL"]',
-    `/ip dns static add name="wifi.pago" address=${gateway} comment="WIFI-PAGO-PORTAL-LOCAL"`,
+    `/ip dns static add name="${hotspotDnsName}" address=${gateway} comment="WIFI-PAGO-PORTAL-LOCAL"`,
     '/ip firewall connection tracking set tcp-established-timeout=1h',
     "",
     "# LIMPAR TABELAS ANTIGAS DE MONITORAMENTO",
@@ -21079,7 +21145,7 @@ function buildSingleMikrotikNetworkScript(eventData, router){
     ),
     "",
     "# HOTSPOT",
-    `:if ([:len [/ip hotspot profile find name="hsprof-wifi-pago"]] = 0) do={ /ip hotspot profile add name=hsprof-wifi-pago hotspot-address=${gateway} dns-name=wifi.pago html-directory=flash/hotspot login-by=mac,cookie,http-chap,http-pap mac-auth-mode=mac-as-username-and-password } else={ /ip hotspot profile set [find name="hsprof-wifi-pago"] hotspot-address=${gateway} dns-name=wifi.pago html-directory=flash/hotspot login-by=mac,cookie,http-chap,http-pap mac-auth-mode=mac-as-username-and-password }`,
+    `:if ([:len [/ip hotspot profile find name="hsprof-wifi-pago"]] = 0) do={ /ip hotspot profile add name=hsprof-wifi-pago hotspot-address=${gateway} dns-name=${hotspotDnsName} html-directory=flash/hotspot login-by=${hotspotLoginBy} ${hotspotCertificateSetting} mac-auth-mode=mac-as-username-and-password } else={ /ip hotspot profile set [find name="hsprof-wifi-pago"] hotspot-address=${gateway} dns-name=${hotspotDnsName} html-directory=flash/hotspot login-by=${hotspotLoginBy} ${hotspotCertificateSetting} mac-auth-mode=mac-as-username-and-password }`,
     ':if ([:len [/ip hotspot find name="hotspot-wifi-pago"]] = 0) do={ /ip hotspot add name=hotspot-wifi-pago interface=bridge-clientes address-pool=pool-wifi-pago profile=hsprof-wifi-pago disabled=no } else={ /ip hotspot set [find name="hotspot-wifi-pago"] interface=bridge-clientes address-pool=pool-wifi-pago profile=hsprof-wifi-pago disabled=no }',
     "",
     "# PERFIS DOS PLANOS"

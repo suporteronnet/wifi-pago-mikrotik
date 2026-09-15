@@ -386,6 +386,10 @@ CREATE TABLE IF NOT EXISTS routers (
 
   client_gateway TEXT,
 
+  hotspot_dns_name TEXT DEFAULT '',
+
+  hotspot_ssl_certificate TEXT DEFAULT '',
+
   dhcp_pool_start TEXT,
 
   dhcp_pool_end TEXT,
@@ -20044,6 +20048,21 @@ app.get(
 })();
 
 
+(function ensureRouterHotspotTlsColumns(){
+
+  const columns = db.prepare("PRAGMA table_info(routers)").all();
+
+  if(!columns.some(column => column.name === "hotspot_dns_name")){
+    db.exec("ALTER TABLE routers ADD COLUMN hotspot_dns_name TEXT DEFAULT ''");
+  }
+
+  if(!columns.some(column => column.name === "hotspot_ssl_certificate")){
+    db.exec("ALTER TABLE routers ADD COLUMN hotspot_ssl_certificate TEXT DEFAULT ''");
+  }
+
+})();
+
+
 function normalizeReservedIps(
   value,
   clientNetwork
@@ -20838,6 +20857,16 @@ app.post(
           now
         );
 
+      db.prepare(`
+        UPDATE routers
+        SET hotspot_dns_name=?, hotspot_ssl_certificate=?
+        WHERE id=?
+      `).run(
+        String(req.body?.hotspot_dns_name || "").trim().toLowerCase().slice(0,253),
+        String(req.body?.hotspot_ssl_certificate || "").trim().slice(0,200),
+        Number(result.lastInsertRowid)
+      );
+
       const router =
         getRouterById(
           Number(result.lastInsertRowid)
@@ -20964,6 +20993,8 @@ app.put(
 
           client_network=?,
           client_gateway=?,
+          hotspot_dns_name=?,
+          hotspot_ssl_certificate=?,
           dhcp_pool_start=?,
           dhcp_pool_end=?,
           reserved_ips=?,
@@ -21013,6 +21044,8 @@ app.put(
 
         networkConfig.client_network,
         networkConfig.client_gateway,
+        String(req.body?.hotspot_dns_name ?? router.hotspot_dns_name ?? "").trim().toLowerCase().slice(0,253),
+        String(req.body?.hotspot_ssl_certificate ?? router.hotspot_ssl_certificate ?? "").trim().slice(0,200),
         networkConfig.dhcp_pool_start,
         networkConfig.dhcp_pool_end,
 
