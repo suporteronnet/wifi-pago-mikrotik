@@ -11,9 +11,7 @@
   content="width=device-width,initial-scale=1"
 >
 
-<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
+<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">
 
 <title>WI-FI TOTAL</title>
 
@@ -2328,6 +2326,8 @@ async function sendPortalFunnelEvent(
             "POST",
           cache:
             "no-store",
+          keepalive:
+            normalizedStep === "PORTAL_OPENED",
           headers:{
             "Content-Type":
               "application/json"
@@ -6915,14 +6915,21 @@ function applyPortalIcons(root=document.body){
   });
 }
 
-applyPortalIcons();
-new MutationObserver(records => records.forEach(record => {
+const portalIconObserver = new MutationObserver(records => records.forEach(record => {
   if(record.type === "characterData") applyPortalIcons(record.target.parentElement);
   record.addedNodes.forEach(node => {
     if(node.nodeType === Node.ELEMENT_NODE) applyPortalIcons(node);
     else if(node.nodeType === Node.TEXT_NODE && node.parentElement) applyPortalIcons(node.parentElement);
   });
-})).observe(document.body, {childList:true,subtree:true,characterData:true});
+}));
+portalIconObserver.observe(document.body, {childList:true,subtree:true,characterData:true});
+
+const upgradePortalIcons = () => applyPortalIcons();
+if(typeof window.requestIdleCallback === "function"){
+  window.requestIdleCallback(upgradePortalIcons, {timeout:500});
+}else{
+  window.setTimeout(upgradePortalIcons, 0);
+}
 
 async function startPortal(){
 
@@ -6934,7 +6941,7 @@ async function startPortal(){
 
   installRegistrationFunnelListeners();
 
-  await sendPortalFunnelEvent(
+  sendPortalFunnelEvent(
     "PORTAL_OPENED",
     {
       metadata:{
