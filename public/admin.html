@@ -7031,12 +7031,12 @@ async function loadVoucherBatches(){
     window.voucherPrintDataByBatch = window.voucherPrintDataByBatch || Object.create(null);
     list.innerHTML = (data.batches || []).map(batch => {
       const batchId = Number(batch.id);
-      const canPrint = Boolean(window.voucherPrintDataByBatch[batchId]?.codes?.length);
+      const canPrint = Number(batch.has_print_data) === 1 || Boolean(window.voucherPrintDataByBatch[batchId]?.codes?.length);
       return `<div style="padding:10px 0;border-top:1px solid #26364d;font-size:12px;">
       <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
         <span><b>Voucher ${batch.first_number}–${batch.last_number}</b> · ${escapeHtml(batch.plan_name)} · ${money(batch.amount)} · ${Number(batch.minutes)} min · ${escapeHtml(batch.rate_limit)}<br><span style="color:#94a3b8">${Number(batch.unused)} disponíveis · ${Number(batch.redeemed)} usados</span></span>
         <span style="display:flex;gap:6px;">
-          <button type="button" ${canPrint ? `onclick="printVoucherCards(${batchId})"` : "disabled title=\"Os códigos só ficam disponíveis na sessão em que o lote foi gerado.\""} style="padding:7px 9px;border-radius:7px;border:1px solid ${canPrint ? "#2563eb" : "#334155"};background:${canPrint ? "#1d4ed8" : "#172338"};color:${canPrint ? "white" : "#94a3b8"};cursor:${canPrint ? "pointer" : "not-allowed"};">${canPrint ? "Imprimir / PDF" : "Impressão indisponível"}</button>
+          <button type="button" ${canPrint ? `onclick="printVoucherCards(${batchId})"` : "disabled title=\"Este lote antigo não possui códigos salvos para reimpressão.\""} style="padding:7px 9px;border-radius:7px;border:1px solid ${canPrint ? "#2563eb" : "#334155"};background:${canPrint ? "#1d4ed8" : "#172338"};color:${canPrint ? "white" : "#94a3b8"};cursor:${canPrint ? "pointer" : "not-allowed"};">${canPrint ? "Imprimir / PDF" : "Impressão indisponível"}</button>
           <button type="button" onclick="toggleVoucherBatch(${Number(batch.id)},${Number(batch.active) ? 0 : 1})" style="padding:7px 9px;border-radius:7px;border:1px solid #475569;background:#172338;color:#e2e8f0;cursor:pointer;">${Number(batch.active) ? "Desativar" : "Ativar"}</button>
           <button type="button" onclick="deleteVoucherBatch(${Number(batch.id)},${Number(batch.first_number)},${Number(batch.last_number)})" style="padding:7px 9px;border-radius:7px;border:1px solid #991b1b;background:#450a0a;color:#fecaca;cursor:pointer;">Apagar</button>
         </span>
@@ -7059,10 +7059,10 @@ async function loadVoucherRows(batchId, details){
     const response = await fetch(`/admin/api/voucher-batches/${batchId}/vouchers`,{cache:"no-store"});
     const data = await response.json();
     if(!response.ok || !data.ok) throw new Error(data.error || "Não foi possível carregar os vouchers.");
-    target.innerHTML = `<div style="max-height:340px;overflow:auto;border:1px solid #26364d;border-radius:8px;"><table style="width:100%;border-collapse:collapse;min-width:580px;font-size:11px;"><thead><tr style="text-align:left;color:#94a3b8;background:#111d31;"><th style="padding:8px;">Nº</th><th style="padding:8px;">Status</th><th style="padding:8px;">Cliente</th><th style="padding:8px;">Usado em</th><th style="padding:8px;">MAC</th><th style="padding:8px;">IP</th></tr></thead><tbody>${(data.vouchers || []).map(voucher => {
-      const used = voucher.status === "redeemed";
-      const client = voucher.customer_name || voucher.customer_phone || "—";
-      return `<tr style="border-top:1px solid #26364d;"><td style="padding:7px;">${Number(voucher.serial_number)}</td><td style="padding:7px;color:${used ? "#4ade80" : "#93c5fd"};font-weight:700;">${used ? "Usado" : "Disponível"}</td><td style="padding:7px;">${escapeHtml(client)}</td><td style="padding:7px;">${used ? dateBR(voucher.redeemed_at) : "—"}</td><td style="padding:7px;">${escapeHtml(voucher.redeemed_mac || "—")}</td><td style="padding:7px;">${escapeHtml(voucher.redeemed_ip || "—")}</td></tr>`;
+    target.innerHTML = `<div style="max-height:340px;overflow:auto;border:1px solid #26364d;border-radius:8px;"><table style="width:100%;border-collapse:collapse;min-width:640px;font-size:11px;"><thead><tr style="text-align:left;color:#94a3b8;background:#111d31;"><th style="padding:8px;">Nº</th><th style="padding:8px;">Código</th><th style="padding:8px;">Status</th><th style="padding:8px;">Cliente</th><th style="padding:8px;">Usado em</th><th style="padding:8px;">MAC</th><th style="padding:8px;">IP</th></tr></thead><tbody>${(data.vouchers || []).map(voucher => {
+       const used = voucher.status === "redeemed";
+        const client = voucher.customer_name || voucher.customer_phone || "—";
+       return `<tr style="border-top:1px solid #26364d;"><td style="padding:7px;">${Number(voucher.serial_number)}</td><td style="padding:7px;font-family:monospace;font-weight:700;color:#e2e8f0;">${escapeHtml(voucher.code || "—")}</td><td style="padding:7px;color:${used ? "#4ade80" : "#93c5fd"};font-weight:700;">${used ? "Usado" : "Disponível"}</td><td style="padding:7px;">${escapeHtml(client)}</td><td style="padding:7px;">${used ? dateBR(voucher.redeemed_at) : "—"}</td><td style="padding:7px;">${escapeHtml(voucher.redeemed_mac || "—")}</td><td style="padding:7px;">${escapeHtml(voucher.redeemed_ip || "—")}</td></tr>`;
     }).join("")}</tbody></table></div>`;
   }catch(error){ target.textContent = error.message; }
 }
@@ -7103,12 +7103,12 @@ async function createVoucherBatch(){
     const response = await fetch(`/admin/api/events/${currentEventId}/voucher-batches`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({plan_id:planId,quantity,ssid,wifi_password:wifiPassword})});
     const data = await response.json();
     if(!response.ok || !data.ok) throw new Error(data.error || "Falha ao gerar vouchers");
-    message.style.color = "#4ade80"; message.textContent = `Lote ${data.batch.first_number}–${data.batch.last_number} criado. Os códigos não poderão ser recuperados depois; imprima/salve os cartões agora.`;
+    message.style.color = "#4ade80"; message.textContent = `Lote ${data.batch.first_number}–${data.batch.last_number} criado. Os códigos foram salvos com proteção para permitir reimpressão pelo painel.`;
     const content = data.codes.map(item => `${item.number}\t${item.code}`).join("\n");
     window.voucherPrintData = {batch:data.batch,codes:data.codes,wifi:data.wifi};
     window.voucherPrintDataByBatch = window.voucherPrintDataByBatch || Object.create(null);
     window.voucherPrintDataByBatch[Number(data.batch.id)] = window.voucherPrintData;
-    document.getElementById("voucherGeneratedCodes").innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:9px;"><button type="button" onclick="downloadVoucherCodes()" style="padding:9px 12px;border-radius:8px;border:1px solid #475569;background:#172338;color:white;cursor:pointer;">BAIXAR BACKUP TXT</button></div><small style="display:block;margin-top:6px;color:#94a3b8;">A impressão deste lote está no botão ao lado do nome dele.</small><details style="margin-top:8px;color:#cbd5e1;font-size:12px;"><summary>Ver códigos em texto</summary><textarea readonly rows="6" style="width:100%;margin-top:7px;padding:10px;border-radius:8px;background:#050b16;color:#e2e8f0;font:12px monospace;">${escapeHtml(content)}</textarea></details>`;
+    document.getElementById("voucherGeneratedCodes").innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:9px;"><button type="button" onclick="downloadVoucherCodes()" style="padding:9px 12px;border-radius:8px;border:1px solid #475569;background:#172338;color:white;cursor:pointer;">BAIXAR BACKUP TXT</button></div><small style="display:block;margin-top:6px;color:#94a3b8;">A impressão e a reimpressão estão no botão de cada lote. O código também aparece na tabela de status.</small><details style="margin-top:8px;color:#cbd5e1;font-size:12px;"><summary>Ver códigos em texto</summary><textarea readonly rows="6" style="width:100%;margin-top:7px;padding:10px;border-radius:8px;background:#050b16;color:#e2e8f0;font:12px monospace;">${escapeHtml(content)}</textarea></details>`;
     window.voucherCodesDownload = `Lote ${data.batch.first_number}-${data.batch.last_number} | ${data.batch.plan_name}\nNúmero\tCódigo\n${content}\n`;
     await loadVoucherBatches();
   }catch(error){ message.style.color = "#f87171"; message.textContent = error.message; }
@@ -7122,11 +7122,18 @@ function downloadVoucherCodes(){
   link.click(); URL.revokeObjectURL(link.href);
 }
 
-function printVoucherCards(batchId){
-  const data = window.voucherPrintDataByBatch?.[Number(batchId)];
+async function printVoucherCards(batchId){
+  const popup = window.open("","_blank");
+  let data = window.voucherPrintDataByBatch?.[Number(batchId)];
   if(!data?.codes?.length || !data.wifi?.qr_data_url){
-    alert("Os códigos deste lote não estão mais disponíveis nesta sessão. Gere um novo lote para imprimir os cartões.");
-    return;
+    try{
+      const response = await fetch(`/admin/api/voucher-batches/${Number(batchId)}/print-data`,{cache:"no-store"});
+      const saved = await response.json();
+      if(!response.ok || !saved.ok) throw new Error(saved.error || "Não foi possível recuperar os códigos deste lote.");
+      data = saved;
+      window.voucherPrintDataByBatch = window.voucherPrintDataByBatch || Object.create(null);
+      window.voucherPrintDataByBatch[Number(batchId)] = data;
+    }catch(error){ if(popup) popup.close(); alert(error.message); return; }
   }
   const escape = value => escapeHtml(String(value ?? ""));
   const duration = Number(data.batch.minutes || 0);
@@ -7167,7 +7174,6 @@ function printVoucherCards(batchId){
     @page{size:A4 landscape;margin:6mm}
     @media print{body{padding:0}.toolbar{display:none}.sheet{gap:2.5mm}.ticket{height:40mm}}
   </style></head><body><div class="toolbar"><button onclick="window.print()">Imprimir / Salvar em PDF</button><button onclick="window.close()">Fechar</button></div><main class="sheet">${cards}</main></body></html>`;
-  const popup = window.open("","_blank");
   if(!popup){
     const link=document.createElement("a");
     link.href=URL.createObjectURL(new Blob([html],{type:"text/html;charset=utf-8"}));

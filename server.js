@@ -273,6 +273,39 @@ const db =
     )
   );
 
+// Codigos impressos sao credenciais de acesso. Mantemos uma copia recuperavel
+// criptografada no banco para permitir reimpressao somente pelo painel admin.
+const voucherPrintKeyPath = path.join(dataDir, "voucher-print.key");
+let voucherPrintKey;
+try {
+  voucherPrintKey = fs.readFileSync(voucherPrintKeyPath);
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+  voucherPrintKey = crypto.randomBytes(32);
+  try {
+    fs.writeFileSync(voucherPrintKeyPath, voucherPrintKey, { flag: "wx", mode: 0o600 });
+  } catch (writeError) {
+    if (writeError.code !== "EEXIST") throw writeError;
+    voucherPrintKey = fs.readFileSync(voucherPrintKeyPath);
+  }
+}
+if (voucherPrintKey.length !== 32) throw new Error("Chave de impressao de vouchers invalida");
+
+function encryptVoucherPrintData(value) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", voucherPrintKey, iv);
+  const encrypted = Buffer.concat([cipher.update(JSON.stringify(value), "utf8"), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString("base64");
+}
+
+function decryptVoucherPrintData(value) {
+  const payload = Buffer.from(String(value || ""), "base64");
+  if (payload.length < 29) throw new Error("Dados de impressao invalidos");
+  const decipher = crypto.createDecipheriv("aes-256-gcm", voucherPrintKey, payload.subarray(0, 12));
+  decipher.setAuthTag(payload.subarray(12, 28));
+  return JSON.parse(Buffer.concat([decipher.update(payload.subarray(28)), decipher.final()]).toString("utf8"));
+}
+
 db.pragma(
   "journal_mode = WAL"
 );
@@ -291,6 +324,7 @@ db.exec(`
     ip TEXT,
     created_at TEXT NOT NULL
   );
+
   CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created_at
     ON admin_audit_log(created_at DESC);
 `);
@@ -796,6 +830,9 @@ if(!db.prepare("PRAGMA table_info(voucher_batches)").all().some(column => column
 }
 if(!db.prepare("PRAGMA table_info(voucher_batches)").all().some(column => column.name === "deleted_at")){
   db.exec("ALTER TABLE voucher_batches ADD COLUMN deleted_at TEXT");
+}
+if(!db.prepare("PRAGMA table_info(voucher_batches)").all().some(column => column.name === "print_data_encrypted")){
+  db.exec("ALTER TABLE voucher_batches ADD COLUMN print_data_encrypted TEXT");
 }
 
 
@@ -21691,7 +21728,10 @@ app.put(
 app.get("/admin/api/events/:eventId/voucher-batches", adminAuth, (req,res) => {
   const eventId = positiveId(req.params.eventId);
   if(!eventId || !getEventById(eventId)) return res.status(404).json({ok:false,error:"Evento não encontrado"});
-  const batches = db.prepare(`SELECT b.*, COUNT(v.id) AS quantity,
+  const batches = db.prepare(`SELECT b.id,b.event_id,b.first_number,b.last_number,b.plan_id,b.plan_name,b.minutes,b.rate_limit,
+    b.mikrotik_profile,b.amount,b.active,b.created_at,b.deleted_at,
+    CASE WHEN b.print_data_encrypted IS NULL THEN 0 ELSE 1 END AS has_print_data,
+    COUNT(v.id) AS quantity,
     SUM(CASE WHEN v.status='unused' THEN 1 ELSE 0 END) AS unused,
     SUM(CASE WHEN v.status='redeemed' THEN 1 ELSE 0 END) AS redeemed
     FROM voucher_batches b LEFT JOIN vouchers v ON v.batch_id=b.id
@@ -21701,13 +21741,23 @@ app.get("/admin/api/events/:eventId/voucher-batches", adminAuth, (req,res) => {
 
 app.get("/admin/api/voucher-batches/:batchId/vouchers", adminAuth, (req,res) => {
   const batchId = positiveId(req.params.batchId);
-  const batch = db.prepare("SELECT id FROM voucher_batches WHERE id=? AND deleted_at IS NULL").get(batchId);
+  const batch = db.prepare("SELECT id,print_data_encrypted FROM voucher_batches WHERE id=? AND deleted_at IS NULL").get(batchId);
   if(!batch) return res.status(404).json({ok:false,error:"Lote não encontrado"});
+  let codesByNumber = Object.create(null);
+  if(batch.print_data_encrypted){
+    try {
+      const saved = decryptVoucherPrintData(batch.print_data_encrypted);
+      codesByNumber = Object.fromEntries((saved.codes || []).map(item => [Number(item.number),item.code]));
+    } catch(error) {
+      console.error("Erro ao recuperar codigos do lote para auditoria:",error);
+    }
+  }
   const vouchers = db.prepare(`SELECT v.serial_number,v.status,v.created_at,v.redeemed_at,
       v.redeemed_mac,v.redeemed_ip,c.name AS customer_name,c.phone AS customer_phone
     FROM vouchers v LEFT JOIN customers c ON c.client_id=v.redeemed_client_id
     WHERE v.batch_id=? ORDER BY v.serial_number ASC`).all(batchId);
-  res.json({ok:true,vouchers});
+  res.set("Cache-Control", "no-store");
+  res.json({ok:true,vouchers:vouchers.map(voucher => ({...voucher,code:codesByNumber[voucher.serial_number] || null}))});
 });
 
 function escapeWifiQrField(value){
@@ -21754,12 +21804,37 @@ app.post("/admin/api/events/:eventId/voucher-batches", adminAuth, async (req,res
       return {batchId,first,end,now};
     });
     const created = createBatch();
+    db.prepare("UPDATE voucher_batches SET print_data_encrypted=? WHERE id=?").run(
+      encryptVoucherPrintData({codes,ssid,wifiPassword}), created.batchId
+    );
     res.status(201).json({ok:true,batch:{id:created.batchId,first_number:created.first,last_number:created.end,
       plan_name:plan.name,amount:plan.amount,minutes:plan.minutes,rate_limit:plan.rate_limit,quantity},codes,
       wifi:{ssid,has_password:Boolean(wifiPassword),qr_data_url:wifiQrDataUrl}});
   }catch(error){
     console.error("Erro ao gerar lote de vouchers:",error);
     res.status(500).json({ok:false,error:"Não foi possível gerar o lote de vouchers."});
+  }
+});
+
+app.get("/admin/api/voucher-batches/:batchId/print-data", adminAuth, async (req,res) => {
+  try {
+    const batchId = positiveId(req.params.batchId);
+    const batch = db.prepare(`SELECT id,first_number,last_number,plan_name,amount,minutes,rate_limit,print_data_encrypted
+      FROM voucher_batches WHERE id=? AND deleted_at IS NULL`).get(batchId);
+    if(!batch) return res.status(404).json({ok:false,error:"Lote não encontrado"});
+    if(!batch.print_data_encrypted) return res.status(410).json({ok:false,error:"Este lote foi criado antes do salvamento seguro dos códigos e não pode ser reimpresso."});
+    const saved = decryptVoucherPrintData(batch.print_data_encrypted);
+    const wifiPayload = saved.wifiPassword
+      ? `WIFI:T:WPA;S:${escapeWifiQrField(saved.ssid)};P:${escapeWifiQrField(saved.wifiPassword)};;`
+      : `WIFI:T:nopass;S:${escapeWifiQrField(saved.ssid)};;`;
+    const qr_data_url = await QRCode.toDataURL(wifiPayload,{errorCorrectionLevel:"M",margin:1,width:240});
+    res.set("Cache-Control", "no-store");
+    res.json({ok:true,batch:{id:batch.id,first_number:batch.first_number,last_number:batch.last_number,
+      plan_name:batch.plan_name,amount:batch.amount,minutes:batch.minutes,rate_limit:batch.rate_limit},
+      codes:saved.codes,wifi:{ssid:saved.ssid,has_password:Boolean(saved.wifiPassword),qr_data_url}});
+  } catch(error) {
+    console.error("Erro ao recuperar dados de impressao do voucher:",error);
+    res.status(500).json({ok:false,error:"Não foi possível recuperar os dados para impressão."});
   }
 });
 
@@ -21778,7 +21853,7 @@ app.delete("/admin/api/voucher-batches/:batchId", adminAuth, (req,res) => {
   const archive = db.transaction(() => {
     const removed = db.prepare("DELETE FROM vouchers WHERE batch_id=? AND status='unused'").run(batchId);
     const redeemed = db.prepare("SELECT COUNT(*) AS count FROM vouchers WHERE batch_id=? AND status='redeemed'").get(batchId).count;
-    db.prepare("UPDATE voucher_batches SET active=0,deleted_at=? WHERE id=?").run(nowIso(),batchId);
+    db.prepare("UPDATE voucher_batches SET active=0,deleted_at=?,print_data_encrypted=NULL WHERE id=?").run(nowIso(),batchId);
     return {removed:Number(removed.changes || 0),preserved:Number(redeemed || 0)};
   });
   const result = archive();
