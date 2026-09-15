@@ -4116,7 +4116,16 @@ button:focus-visible,
 
           <div id="voucherManager" style="margin-top:16px;padding:14px;border:1px solid #475569;border-radius:12px;background:#0b1628;">
             <strong style="display:block;font-size:15px;">Vouchers gratuitos</strong>
+            <div style="margin:5px 0 10px;color:#94a3b8;font-size:12px;">O QR conecta o cliente ao nome de Wi-Fi informado. Senha opcional para redes WPA/WPA2; deixe em branco para rede aberta. Cada cartão inclui o plano e o valor.</div>
             <div style="margin:5px 0 12px;color:#94a3b8;font-size:12px;">Cada lote usa o tempo e a velocidade de um plano ativo. Os códigos aparecem apenas uma vez, ao gerar.</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-bottom:9px;">
+              <label style="font-size:11px;color:#cbd5e1;">Nome exato do Wi-Fi (SSID)
+                <input id="voucherWifiSsid" type="text" maxlength="32" autocomplete="off" placeholder="Ex.: WI-FI TOTAL EVENTO" style="display:block;box-sizing:border-box;width:100%;margin-top:4px;padding:10px;border-radius:8px;">
+              </label>
+              <label style="font-size:11px;color:#cbd5e1;">Senha do Wi-Fi (opcional)
+                <input id="voucherWifiPassword" type="password" maxlength="63" autocomplete="new-password" placeholder="Vazio se a rede não tiver senha" style="display:block;box-sizing:border-box;width:100%;margin-top:4px;padding:10px;border-radius:8px;">
+              </label>
+            </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
               <select id="voucherPlanSelect" style="flex:1;min-width:180px;padding:10px;border-radius:8px;"></select>
               <input id="voucherQuantity" type="number" min="1" max="1000" value="50" aria-label="Quantidade de vouchers" style="width:105px;padding:10px;border-radius:8px;">
@@ -7020,7 +7029,7 @@ async function loadVoucherBatches(){
     const data = await response.json();
     if(!response.ok || !data.ok) throw new Error(data.error || "Falha ao carregar lotes");
     list.innerHTML = (data.batches || []).map(batch => `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 0;border-top:1px solid #26364d;font-size:12px;">
-      <span><b>Voucher ${batch.first_number}–${batch.last_number}</b> · ${escapeHtml(batch.plan_name)} · ${Number(batch.minutes)} min · ${escapeHtml(batch.rate_limit)}<br><span style="color:#94a3b8">${Number(batch.unused)} disponíveis · ${Number(batch.redeemed)} usados</span></span>
+      <span><b>Voucher ${batch.first_number}–${batch.last_number}</b> · ${escapeHtml(batch.plan_name)} · ${money(batch.amount)} · ${Number(batch.minutes)} min · ${escapeHtml(batch.rate_limit)}<br><span style="color:#94a3b8">${Number(batch.unused)} disponíveis · ${Number(batch.redeemed)} usados</span></span>
       <button type="button" onclick="toggleVoucherBatch(${Number(batch.id)},${Number(batch.active) ? 0 : 1})" style="padding:7px 9px;border-radius:7px;border:1px solid #475569;background:#172338;color:#e2e8f0;cursor:pointer;">${Number(batch.active) ? "Desativar" : "Ativar"}</button>
     </div>`).join("") || '<div style="padding-top:10px;color:#94a3b8;font-size:12px;">Nenhum lote gerado ainda.</div>';
   }catch(error){ list.textContent = error.message; }
@@ -7030,17 +7039,23 @@ async function createVoucherBatch(){
   const message = document.getElementById("voucherBatchMessage");
   const planId = document.getElementById("voucherPlanSelect")?.value;
   const quantity = Number(document.getElementById("voucherQuantity")?.value);
+  const ssid = document.getElementById("voucherWifiSsid")?.value || "";
+  const wifiPassword = document.getElementById("voucherWifiPassword")?.value || "";
   if(!planId || !Number.isInteger(quantity) || quantity < 1 || quantity > 1000){
     message.style.color = "#f87171"; message.textContent = "Escolha um plano ativo e uma quantidade de 1 a 1.000."; return;
   }
+  if(!ssid.trim()){
+    message.style.color = "#f87171"; message.textContent = "Informe o nome exato da rede Wi-Fi para criar o QR Code."; document.getElementById("voucherWifiSsid")?.focus(); return;
+  }
   try{
     message.style.color = "#94a3b8"; message.textContent = "Gerando códigos...";
-    const response = await fetch(`/admin/api/events/${currentEventId}/voucher-batches`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({plan_id:planId,quantity})});
+    const response = await fetch(`/admin/api/events/${currentEventId}/voucher-batches`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({plan_id:planId,quantity,ssid,wifi_password:wifiPassword})});
     const data = await response.json();
     if(!response.ok || !data.ok) throw new Error(data.error || "Falha ao gerar vouchers");
-    message.style.color = "#4ade80"; message.textContent = `Lote ${data.batch.first_number}–${data.batch.last_number} criado para ${data.batch.plan_name}. Salve os códigos agora; eles não poderão ser exibidos novamente.`;
+    message.style.color = "#4ade80"; message.textContent = `Lote ${data.batch.first_number}–${data.batch.last_number} criado. Os códigos não poderão ser recuperados depois; imprima/salve os cartões agora.`;
     const content = data.codes.map(item => `${item.number}\t${item.code}`).join("\n");
-    document.getElementById("voucherGeneratedCodes").innerHTML = `<textarea readonly rows="8" style="width:100%;margin-top:8px;padding:10px;border-radius:8px;background:#050b16;color:#e2e8f0;font:12px monospace;">${escapeHtml(content)}</textarea><button type="button" onclick="downloadVoucherCodes()" style="margin-top:7px;padding:8px 10px;border-radius:7px;border:1px solid #475569;background:#172338;color:white;cursor:pointer;">BAIXAR CÓDIGOS (.TXT)</button>`;
+    window.voucherPrintData = {batch:data.batch,codes:data.codes,wifi:data.wifi};
+    document.getElementById("voucherGeneratedCodes").innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:9px;"><button type="button" onclick="printVoucherCards()" style="padding:9px 12px;border:0;border-radius:8px;background:#2563eb;color:white;font-weight:800;cursor:pointer;">IMPRIMIR / SALVAR CARTÕES EM PDF</button><button type="button" onclick="downloadVoucherCodes()" style="padding:9px 12px;border-radius:8px;border:1px solid #475569;background:#172338;color:white;cursor:pointer;">BAIXAR BACKUP TXT</button></div><details style="margin-top:8px;color:#cbd5e1;font-size:12px;"><summary>Ver códigos em texto</summary><textarea readonly rows="6" style="width:100%;margin-top:7px;padding:10px;border-radius:8px;background:#050b16;color:#e2e8f0;font:12px monospace;">${escapeHtml(content)}</textarea></details>`;
     window.voucherCodesDownload = `Lote ${data.batch.first_number}-${data.batch.last_number} | ${data.batch.plan_name}\nNúmero\tCódigo\n${content}\n`;
     await loadVoucherBatches();
   }catch(error){ message.style.color = "#f87171"; message.textContent = error.message; }
@@ -7052,6 +7067,39 @@ function downloadVoucherCodes(){
   link.href = URL.createObjectURL(new Blob([window.voucherCodesDownload],{type:"text/plain;charset=utf-8"}));
   link.download = `vouchers-evento-${currentEventId}.txt`;
   link.click(); URL.revokeObjectURL(link.href);
+}
+
+function printVoucherCards(){
+  const data = window.voucherPrintData;
+  if(!data?.codes?.length || !data.wifi?.qr_data_url) return;
+  const escape = value => escapeHtml(String(value ?? ""));
+  const duration = Number(data.batch.minutes || 0);
+  const durationText = duration >= 60
+    ? `${Math.floor(duration / 60)} h${duration % 60 ? ` ${duration % 60} min` : ""}`
+    : `${duration} min`;
+  const priceText = Number(data.batch.amount || 0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+  const cards = data.codes.map(item => `<article class="ticket">
+    <header>WI-FI TOTAL <span>ACESSO WI-FI</span></header>
+    <div class="network">${escape(data.wifi.ssid)}</div>
+    <div class="ticket-body"><img class="qr" src="${escape(data.wifi.qr_data_url)}" alt="QR Code para conectar ao Wi-Fi"><div class="ticket-info">
+      <div class="voucher-code">${escape(item.code)}</div>
+      <div class="plan">${escape(data.batch.plan_name)}</div>
+      <div class="details">${durationText} · ${escape(data.batch.rate_limit)}</div>
+      <div class="price">${priceText}</div>
+    </div></div>
+    <footer>Conecte ao Wi-Fi e use o código no portal · #${Number(item.number)}</footer>
+  </article>`).join("");
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cartões de voucher</title><style>
+    *{box-sizing:border-box}body{margin:0;padding:10mm;font-family:Arial,sans-serif;color:#111827}.toolbar{display:flex;gap:10px;margin-bottom:12px}.toolbar button{padding:10px 16px;border:0;border-radius:6px;background:#1d4ed8;color:#fff;font-weight:700;cursor:pointer}.sheet{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3mm}.ticket{height:38mm;padding:2.4mm;border:1px dashed #64748b;display:flex;flex-direction:column;overflow:hidden;break-inside:avoid;page-break-inside:avoid}.ticket header{text-align:center;color:#1769aa;font-size:10pt;font-weight:800;letter-spacing:.4px;border-bottom:1px solid #cbd5e1;padding-bottom:1mm}.ticket header span{float:right;color:#64748b;font-size:6pt;letter-spacing:0;font-weight:500}.network{text-align:center;font-weight:700;font-size:7.5pt;margin:1mm 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ticket-body{display:flex;align-items:center;gap:2mm;min-height:0;flex:1}.qr{width:21mm;height:21mm;object-fit:contain;image-rendering:pixelated}.ticket-info{min-width:0;line-height:1.2}.voucher-code{font-size:15pt;font-weight:800;letter-spacing:1px;white-space:nowrap}.plan{font-size:8pt;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.details{font-size:7pt;color:#475569;white-space:nowrap}.price{font-size:9pt;font-weight:800;margin-top:.6mm}.ticket footer{border-top:1px solid #cbd5e1;padding-top:.8mm;text-align:center;font-size:5.8pt;color:#475569;white-space:nowrap}@page{size:A4 landscape;margin:6mm}@media print{body{padding:0}.toolbar{display:none}.sheet{gap:2.5mm}.ticket{height:37mm}}</style></head><body><div class="toolbar"><button onclick="window.print()">Imprimir / Salvar em PDF</button><button onclick="window.close()">Fechar</button></div><main class="sheet">${cards}</main></body></html>`;
+  const popup = window.open("","_blank");
+  if(!popup){
+    const link=document.createElement("a");
+    link.href=URL.createObjectURL(new Blob([html],{type:"text/html;charset=utf-8"}));
+    link.download=`cartoes-voucher-${currentEventId}-${data.batch.first_number}-${data.batch.last_number}.html`;
+    link.click(); URL.revokeObjectURL(link.href); return;
+  }
+  popup.onload = () => setTimeout(() => { popup.focus(); popup.print(); },500);
+  popup.document.open(); popup.document.write(html); popup.document.close();
 }
 
 async function toggleVoucherBatch(batchId, active){

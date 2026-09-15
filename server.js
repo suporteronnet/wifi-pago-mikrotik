@@ -7,6 +7,7 @@ const axios = require("axios");
 const Database = require("better-sqlite3");
 const basicAuth = require("express-basic-auth");
 const crypto = require("crypto");
+const QRCode = require("qrcode");
 const path = require("path");
 const fs = require("fs");
 
@@ -762,6 +763,7 @@ CREATE TABLE IF NOT EXISTS voucher_batches (
   minutes INTEGER NOT NULL,
   rate_limit TEXT NOT NULL,
   mikrotik_profile TEXT NOT NULL,
+  amount REAL NOT NULL DEFAULT 0,
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   FOREIGN KEY(event_id) REFERENCES events(id)
@@ -787,6 +789,10 @@ CREATE TABLE IF NOT EXISTS vouchers (
 CREATE INDEX IF NOT EXISTS idx_vouchers_batch ON vouchers(batch_id, serial_number);
 CREATE INDEX IF NOT EXISTS idx_vouchers_status ON vouchers(event_id, status);
 `);
+
+if(!db.prepare("PRAGMA table_info(voucher_batches)").all().some(column => column.name === "amount")){
+  db.exec("ALTER TABLE voucher_batches ADD COLUMN amount REAL NOT NULL DEFAULT 0");
+}
 
 
 // ============================================================
@@ -21646,22 +21652,34 @@ app.get("/admin/api/events/:eventId/voucher-batches", adminAuth, (req,res) => {
   res.json({ok:true,batches});
 });
 
-app.post("/admin/api/events/:eventId/voucher-batches", adminAuth, (req,res) => {
+function escapeWifiQrField(value){
+  return String(value || "").replace(/([\\;,:\"])/g, "\\$1");
+}
+
+app.post("/admin/api/events/:eventId/voucher-batches", adminAuth, async (req,res) => {
   try{
     const eventId = positiveId(req.params.eventId);
     const quantity = Number(req.body?.quantity);
+    const ssid = String(req.body?.ssid || "");
+    const wifiPassword = String(req.body?.wifi_password || "");
     if(!eventId || !getEventById(eventId)) return res.status(404).json({ok:false,error:"Evento não encontrado"});
+    if(!ssid.trim() || Buffer.byteLength(ssid,"utf8") > 32) return res.status(400).json({ok:false,error:"Informe o nome exato do Wi-Fi (até 32 bytes)."});
+    if(wifiPassword && (Buffer.byteLength(wifiPassword,"utf8") < 8 || Buffer.byteLength(wifiPassword,"utf8") > 63)) return res.status(400).json({ok:false,error:"A senha do Wi-Fi deve ter entre 8 e 63 bytes."});
     const plan = db.prepare(`SELECT * FROM event_plans WHERE event_id=? AND plan_key=? AND active=1 AND deleted_at IS NULL`).get(eventId, String(req.body?.plan_id || ""));
     if(!plan) return res.status(400).json({ok:false,error:"Selecione um plano ativo do evento."});
     if(!Number.isInteger(quantity) || quantity<1 || quantity>1000) return res.status(400).json({ok:false,error:"A quantidade deve estar entre 1 e 1.000 vouchers por lote."});
+    const wifiPayload = wifiPassword
+      ? `WIFI:T:WPA;S:${escapeWifiQrField(ssid)};P:${escapeWifiQrField(wifiPassword)};;`
+      : `WIFI:T:nopass;S:${escapeWifiQrField(ssid)};;`;
+    const wifiQrDataUrl = await QRCode.toDataURL(wifiPayload,{errorCorrectionLevel:"M",margin:1,width:240});
 
     const codes = [];
     const createBatch = db.transaction(() => {
       const last = db.prepare("SELECT MAX(last_number) AS value FROM voucher_batches WHERE event_id=?").get(eventId)?.value || 0;
       const first = Number(last)+1, end = first+quantity-1, now = nowIso();
       const result = db.prepare(`INSERT INTO voucher_batches
-        (event_id,first_number,last_number,plan_id,plan_name,minutes,rate_limit,mikrotik_profile,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?)`).run(eventId,first,end,plan.plan_key,plan.name,plan.minutes,plan.rate_limit,plan.mikrotik_profile,now);
+        (event_id,first_number,last_number,plan_id,plan_name,minutes,rate_limit,mikrotik_profile,amount,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)`).run(eventId,first,end,plan.plan_key,plan.name,plan.minutes,plan.rate_limit,plan.mikrotik_profile,plan.amount,now);
       const batchId = Number(result.lastInsertRowid);
       const insert = db.prepare("INSERT INTO vouchers (batch_id,event_id,serial_number,code_hash,code_last4,created_at) VALUES (?,?,?,?,?,?)");
       for(let number=first;number<=end;number++){
@@ -21679,7 +21697,8 @@ app.post("/admin/api/events/:eventId/voucher-batches", adminAuth, (req,res) => {
     });
     const created = createBatch();
     res.status(201).json({ok:true,batch:{id:created.batchId,first_number:created.first,last_number:created.end,
-      plan_name:plan.name,minutes:plan.minutes,rate_limit:plan.rate_limit,quantity},codes});
+      plan_name:plan.name,amount:plan.amount,minutes:plan.minutes,rate_limit:plan.rate_limit,quantity},codes,
+      wifi:{ssid,has_password:Boolean(wifiPassword),qr_data_url:wifiQrDataUrl}});
   }catch(error){
     console.error("Erro ao gerar lote de vouchers:",error);
     res.status(500).json({ok:false,error:"Não foi possível gerar o lote de vouchers."});
