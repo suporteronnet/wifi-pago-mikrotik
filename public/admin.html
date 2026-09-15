@@ -4114,6 +4114,19 @@ button:focus-visible,
 
           </div>
 
+          <div id="voucherManager" style="margin-top:16px;padding:14px;border:1px solid #475569;border-radius:12px;background:#0b1628;">
+            <strong style="display:block;font-size:15px;">Vouchers gratuitos</strong>
+            <div style="margin:5px 0 12px;color:#94a3b8;font-size:12px;">Cada lote usa o tempo e a velocidade de um plano ativo. Os códigos aparecem apenas uma vez, ao gerar.</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <select id="voucherPlanSelect" style="flex:1;min-width:180px;padding:10px;border-radius:8px;"></select>
+              <input id="voucherQuantity" type="number" min="1" max="1000" value="50" aria-label="Quantidade de vouchers" style="width:105px;padding:10px;border-radius:8px;">
+              <button type="button" onclick="createVoucherBatch()" style="padding:10px 14px;border:0;border-radius:8px;background:#16a34a;color:white;font-weight:800;cursor:pointer;">GERAR LOTE</button>
+            </div>
+            <div id="voucherBatchMessage" role="status" style="margin-top:8px;font-size:12px;"></div>
+            <div id="voucherGeneratedCodes" style="margin-top:8px;"></div>
+            <div id="voucherBatchList" style="margin-top:12px;"></div>
+          </div>
+
         </div>
 
 
@@ -5214,6 +5227,14 @@ function isApproved(order){
 // ============================================================
 
 function statusInfo(order){
+
+  if(order.payment_method === "voucher"){
+    const voucherLabel = `Voucher #${Number(order.voucher_serial) || "?"}`;
+    return {
+      text: order.status === "approved" ? `${voucherLabel} usado · Ativo` : `${voucherLabel} usado · Liberando`,
+      className: "badge-approved"
+    };
+  }
 
   // Registro virtual usado somente na aba Logs para preservar
   // o histórico da cortesia mesmo quando depois houve pagamento.
@@ -6714,7 +6735,6 @@ async function openEvent(eventId){
 
   }
 
-
   const panelToRestore =
     currentEventId === id
     &&
@@ -6981,6 +7001,66 @@ function closeEventDetails(){
 
   }
 
+}
+
+async function setupVoucherManager(plans){
+  const select = document.getElementById("voucherPlanSelect");
+  if(!select || !currentEventId) return;
+  select.innerHTML = (plans || []).filter(plan => Number(plan.active) === 1)
+    .map(plan => `<option value="${escapeHtml(plan.plan_key)}">${escapeHtml(plan.name)} · ${Number(plan.minutes)} min · ${escapeHtml(plan.rate_limit)}</option>`).join("");
+  if(!select.options.length) select.innerHTML = '<option value="">Cadastre/ative um plano primeiro</option>';
+  await loadVoucherBatches();
+}
+
+async function loadVoucherBatches(){
+  const list = document.getElementById("voucherBatchList");
+  if(!list || !currentEventId) return;
+  try{
+    const response = await fetch(`/admin/api/events/${currentEventId}/voucher-batches`);
+    const data = await response.json();
+    if(!response.ok || !data.ok) throw new Error(data.error || "Falha ao carregar lotes");
+    list.innerHTML = (data.batches || []).map(batch => `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 0;border-top:1px solid #26364d;font-size:12px;">
+      <span><b>Voucher ${batch.first_number}–${batch.last_number}</b> · ${escapeHtml(batch.plan_name)} · ${Number(batch.minutes)} min · ${escapeHtml(batch.rate_limit)}<br><span style="color:#94a3b8">${Number(batch.unused)} disponíveis · ${Number(batch.redeemed)} usados</span></span>
+      <button type="button" onclick="toggleVoucherBatch(${Number(batch.id)},${Number(batch.active) ? 0 : 1})" style="padding:7px 9px;border-radius:7px;border:1px solid #475569;background:#172338;color:#e2e8f0;cursor:pointer;">${Number(batch.active) ? "Desativar" : "Ativar"}</button>
+    </div>`).join("") || '<div style="padding-top:10px;color:#94a3b8;font-size:12px;">Nenhum lote gerado ainda.</div>';
+  }catch(error){ list.textContent = error.message; }
+}
+
+async function createVoucherBatch(){
+  const message = document.getElementById("voucherBatchMessage");
+  const planId = document.getElementById("voucherPlanSelect")?.value;
+  const quantity = Number(document.getElementById("voucherQuantity")?.value);
+  if(!planId || !Number.isInteger(quantity) || quantity < 1 || quantity > 1000){
+    message.style.color = "#f87171"; message.textContent = "Escolha um plano ativo e uma quantidade de 1 a 1.000."; return;
+  }
+  try{
+    message.style.color = "#94a3b8"; message.textContent = "Gerando códigos...";
+    const response = await fetch(`/admin/api/events/${currentEventId}/voucher-batches`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({plan_id:planId,quantity})});
+    const data = await response.json();
+    if(!response.ok || !data.ok) throw new Error(data.error || "Falha ao gerar vouchers");
+    message.style.color = "#4ade80"; message.textContent = `Lote ${data.batch.first_number}–${data.batch.last_number} criado para ${data.batch.plan_name}. Salve os códigos agora; eles não poderão ser exibidos novamente.`;
+    const content = data.codes.map(item => `${item.number}\t${item.code}`).join("\n");
+    document.getElementById("voucherGeneratedCodes").innerHTML = `<textarea readonly rows="8" style="width:100%;margin-top:8px;padding:10px;border-radius:8px;background:#050b16;color:#e2e8f0;font:12px monospace;">${escapeHtml(content)}</textarea><button type="button" onclick="downloadVoucherCodes()" style="margin-top:7px;padding:8px 10px;border-radius:7px;border:1px solid #475569;background:#172338;color:white;cursor:pointer;">BAIXAR CÓDIGOS (.TXT)</button>`;
+    window.voucherCodesDownload = `Lote ${data.batch.first_number}-${data.batch.last_number} | ${data.batch.plan_name}\nNúmero\tCódigo\n${content}\n`;
+    await loadVoucherBatches();
+  }catch(error){ message.style.color = "#f87171"; message.textContent = error.message; }
+}
+
+function downloadVoucherCodes(){
+  if(!window.voucherCodesDownload) return;
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([window.voucherCodesDownload],{type:"text/plain;charset=utf-8"}));
+  link.download = `vouchers-evento-${currentEventId}.txt`;
+  link.click(); URL.revokeObjectURL(link.href);
+}
+
+async function toggleVoucherBatch(batchId, active){
+  try{
+    const response = await fetch(`/admin/api/voucher-batches/${batchId}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({active})});
+    const data = await response.json();
+    if(!response.ok || !data.ok) throw new Error(data.error || "Não foi possível alterar o lote.");
+    await loadVoucherBatches();
+  }catch(error){ const msg=document.getElementById("voucherBatchMessage"); msg.style.color="#f87171"; msg.textContent=error.message; }
 }
 
 
@@ -9829,6 +9909,9 @@ function renderEventPlans(plans){
     return;
 
   }
+
+
+  setupVoucherManager(plans);
 
 
   if(
@@ -17046,6 +17129,7 @@ function logFunnelStepInfo(step){
   const key = String(step || "").trim().toUpperCase();
 
   const map = {
+    VOUCHER_REDEEMED:["Voucher resgatado","badge-approved"],
     HOTSPOT_DETECTED:["📶 Wi-Fi detectado","badge-other"],
     PORTAL_OPENED:["🌐 Portal aberto","badge-other"],
     REGISTRATION_STARTED:["✍️ Cadastro iniciado","badge-other"],

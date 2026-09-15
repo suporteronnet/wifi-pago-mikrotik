@@ -1634,6 +1634,15 @@ body:before{
       ⓘ A velocidade pode variar de acordo com a disponibilidade da rede.
     </div>
 
+    <div class="voucher-entry" style="margin-top:18px;padding:16px;border:1px solid #334155;border-radius:14px;background:#0b1628;">
+      <strong>Tem um voucher de acesso?</strong>
+      <p style="margin:6px 0 10px;color:#a8b6ca;font-size:13px;">Digite o código para liberar o plano sem cobrança.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <input id="voucherCode" type="text" autocomplete="off" autocapitalize="characters" maxlength="24" placeholder="WIFI-XXXX-XXXX-XXXX-XXXX" aria-label="Código do voucher" style="flex:1;min-width:180px;padding:12px;border:1px solid #334155;border-radius:9px;background:#071225;color:#fff;">
+        <button id="redeemVoucherButton" type="button" onclick="redeemVoucher()" class="wizard-button" style="width:auto;margin:0;padding:12px 18px;">USAR VOUCHER</button>
+      </div>
+      <div id="voucherMessage" class="portal-form-message" role="status" aria-live="polite" hidden></div>
+    </div>
     <div id="planCheckoutMessage" class="portal-form-message" role="status" aria-live="polite" hidden></div>
   </section>
 
@@ -2752,6 +2761,7 @@ function savePendingPix(data){
 
   const saved = {
     order: data.order,
+    payment_method: data.voucher ? "voucher" : "pix",
     qr_code: data.qr_code || "",
     qr_code_base64: data.qr_code_base64 || "",
     plan_name: currentPlan || "",
@@ -2848,6 +2858,28 @@ function renderPendingPix(saved){
   setPaymentViewActive(
     true
   );
+
+  if(saved.payment_method === "voucher"){
+    const heading = document.querySelector("#paymentStep .wizard-heading");
+    if(heading){
+      heading.children[0].textContent = "ETAPA 3 DE 3 · LIBERAÇÃO";
+      heading.children[1].textContent = "Ativando seu voucher";
+      heading.children[2].textContent = "Aguarde a confirmação da MikroTik para liberar seu acesso.";
+    }
+    document.getElementById("payStatus").textContent = "Voucher confirmado. Preparando seu acesso gratuito...";
+    document.getElementById("pixExpiry").hidden = true;
+    document.getElementById("paymentGuidance").hidden = true;
+    document.getElementById("qr").hidden = true;
+    document.getElementById("copy").hidden = true;
+    document.getElementById("copyButton").hidden = true;
+    document.getElementById("copyHelp").hidden = true;
+    document.querySelector("#pay > p").hidden = true;
+    document.querySelector(".payment-trust").hidden = true;
+    document.getElementById("tempInfo").innerHTML = '<div class="temp-box temp-ok"><div class="temp-title">Voucher validado</div><div>Seu plano será liberado sem cobrança assim que o roteador confirmar.</div></div>';
+    scrollToPayment(false, "payStatus");
+    poll();
+    return true;
+  }
 
   document
     .getElementById(
@@ -2958,7 +2990,7 @@ async function restorePendingPix(){
 
 
     if(
-      localAge >
+      saved.payment_method !== "voucher" && localAge >
       PIX_TRACKING_MS
     ){
 
@@ -4758,6 +4790,43 @@ function showPortalFormMessage(message, fieldId="", type="error"){
   }
 }
 
+async function redeemVoucher(){
+  const input = document.getElementById("voucherCode");
+  const message = document.getElementById("voucherMessage");
+  const button = document.getElementById("redeemVoucherButton");
+  const form = readRecoveryForm();
+  const code = String(input?.value || "").trim();
+  if(!code){
+    message.hidden = false; message.className = "portal-form-message error";
+    message.textContent = "Digite o código do voucher."; input?.focus(); return;
+  }
+  if(form.name.length < 2 || form.phoneDigits.length < 10 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)){
+    message.hidden = false; message.className = "portal-form-message error";
+    message.textContent = "Volte aos seus dados e confira nome, telefone e e-mail."; return;
+  }
+  button.disabled = true; button.textContent = "VALIDANDO...";
+  message.hidden = false; message.className = "portal-form-message"; message.textContent = "Validando voucher...";
+  try{
+    const response = await fetch("/api/voucher/redeem", {method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({code,mac,ip,customer_name:form.name,customer_phone:form.phone,email:form.email,
+        client_id:clientId,event_key:eventKey,router_key:routerKey})});
+    const data = await response.json();
+    if(!response.ok || !data.ok) throw new Error(data.error || "Não foi possível validar o voucher.");
+    currentPlan = data.plan_name || "Plano voucher";
+    if(data.router?.id) currentRouterId = Number(data.router.id);
+    if(data.router?.router_key) currentRouterKey = data.router.router_key;
+    savePendingPix(data);
+    message.hidden = true;
+    setWizardStep("payment", true);
+    renderPendingPix(currentPixData);
+  }catch(error){
+    message.className = "portal-form-message error";
+    message.textContent = error.message || "Erro ao resgatar o voucher.";
+  }finally{
+    button.disabled = false; button.textContent = "USAR VOUCHER";
+  }
+}
+
 async function buy(
   plan_id,
   plan_name
@@ -5810,6 +5879,7 @@ async function poll(){
   // ==========================================================
 
   if(
+    currentPixData?.payment_method !== "voucher" &&
     pendingPixAgeMs()
     >=
     PIX_TRACKING_MS

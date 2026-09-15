@@ -750,6 +750,44 @@ CREATE TABLE IF NOT EXISTS orders (
 );
 `);
 
+// Vouchers sao emitidos em lotes por evento e consumidos uma unica vez.
+db.exec(`
+CREATE TABLE IF NOT EXISTS voucher_batches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL,
+  first_number INTEGER NOT NULL,
+  last_number INTEGER NOT NULL,
+  plan_id TEXT NOT NULL,
+  plan_name TEXT NOT NULL,
+  minutes INTEGER NOT NULL,
+  rate_limit TEXT NOT NULL,
+  mikrotik_profile TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(event_id) REFERENCES events(id)
+);
+CREATE TABLE IF NOT EXISTS vouchers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_id INTEGER NOT NULL,
+  event_id INTEGER NOT NULL,
+  serial_number INTEGER NOT NULL,
+  code_hash TEXT NOT NULL UNIQUE,
+  code_last4 TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'unused',
+  created_at TEXT NOT NULL,
+  redeemed_at TEXT,
+  redeemed_order_id INTEGER,
+  redeemed_client_id TEXT,
+  redeemed_mac TEXT,
+  redeemed_ip TEXT,
+  FOREIGN KEY(batch_id) REFERENCES voucher_batches(id),
+  FOREIGN KEY(event_id) REFERENCES events(id),
+  FOREIGN KEY(redeemed_order_id) REFERENCES orders(id)
+);
+CREATE INDEX IF NOT EXISTS idx_vouchers_batch ON vouchers(batch_id, serial_number);
+CREATE INDEX IF NOT EXISTS idx_vouchers_status ON vouchers(event_id, status);
+`);
+
 
 // ============================================================
 // DADOS CADASTRAIS DOS CLIENTES DO PORTAL
@@ -900,6 +938,7 @@ const FUNNEL_STEPS =
     "PORTAL_OPENED",
     "REGISTRATION_STARTED",
     "REGISTRATION_COMPLETED",
+    "VOUCHER_REDEEMED",
     "PLAN_SELECTED",
     "PIX_GENERATED",
     "PIX_COPIED",
@@ -1131,6 +1170,11 @@ ensureColumn(
   "access_expired_at",
   "TEXT"
 );
+
+ensureColumn("payment_method", "TEXT NOT NULL DEFAULT 'pix'");
+ensureColumn("voucher_id", "INTEGER");
+ensureColumn("voucher_batch_id", "INTEGER");
+ensureColumn("voucher_serial", "INTEGER");
 
 
 // ============================================================
@@ -10362,6 +10406,81 @@ app.post(
 // CONSULTAR PEDIDO
 // ============================================================
 
+const limitVoucherByIp = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  keyFor: req => req.ip,
+  message: "Muitas tentativas de voucher. Aguarde alguns minutos."
+});
+
+function normalizeVoucherCode(value){
+  return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^WIFI/, "");
+}
+
+app.post("/api/voucher/redeem", limitVoucherByIp, (req, res) => {
+  try{
+    const context = resolvePortalContext(req.body?.event_key, req.body?.router_key);
+    if(!context.ok) return res.status(400).json({ok:false, error:context.error});
+
+    const code = normalizeVoucherCode(req.body?.code);
+    if(!/^[A-F0-9]{16}$/.test(code)) return res.status(400).json({ok:false, error:"Confira o código do voucher e tente novamente."});
+
+    const name = normalizeCustomerName(req.body?.customer_name);
+    const phone = normalizeCustomerPhone(req.body?.customer_phone);
+    const email = normalizeCustomerEmail(req.body?.email);
+    const clientId = normalizeClientId(req.body?.client_id);
+    const mac = normalizeMac(req.body?.mac);
+    const ip = normalizeIp(req.body?.ip);
+    if(!name || name.length < 2 || !phone || !email || !clientId || !mac || !ip){
+      return res.status(400).json({ok:false, error:"Confira seus dados e a conexão Wi-Fi antes de resgatar."});
+    }
+
+    const voucher = db.prepare(`
+      SELECT v.*, b.plan_id, b.plan_name, b.minutes, b.rate_limit, b.mikrotik_profile, b.active AS batch_active
+      FROM vouchers v JOIN voucher_batches b ON b.id=v.batch_id
+      WHERE v.code_hash=? AND v.event_id=? LIMIT 1
+    `).get(crypto.createHash("sha256").update(code).digest("hex"), context.event.id);
+    if(!voucher || voucher.status !== "unused" || Number(voucher.batch_active) !== 1){
+      return res.status(400).json({ok:false, error:"Voucher inválido, já utilizado ou desativado."});
+    }
+
+    const now = nowIso();
+    const externalRef = "VCH_" + crypto.randomUUID();
+    const createVoucherOrder = db.transaction(() => {
+      const reservation = db.prepare("UPDATE vouchers SET status='redeeming' WHERE id=? AND status='unused'").run(voucher.id);
+      if(!reservation.changes) throw new Error("VOUCHER_ALREADY_USED");
+      db.prepare(`
+        INSERT INTO customers (client_id,name,phone,email,created_at,updated_at,last_seen_at)
+        VALUES (?,?,?,?,?,?,?)
+        ON CONFLICT(client_id) DO UPDATE SET name=excluded.name, phone=excluded.phone,
+          email=excluded.email, updated_at=excluded.updated_at, last_seen_at=excluded.last_seen_at
+      `).run(clientId, name, phone, email, now, now, now);
+      const inserted = db.prepare(`
+        INSERT INTO orders (external_ref,event_id,router_id,client_id,plan_id,amount,minutes,rate_limit,
+          mac,original_mac,effective_mac,ip,payer_email,status,created_at,payment_method,voucher_id,voucher_batch_id,voucher_serial)
+        VALUES (?,?,?,?,?,0,?,?,?,?,?,?,?,'approved_pending_router',?,'voucher',?,?,?)
+      `).run(externalRef, context.event.id, context.router.id, clientId, voucher.plan_id,
+        voucher.minutes, voucher.rate_limit, mac, mac, mac, ip, email, now, voucher.id, voucher.batch_id, voucher.serial_number);
+      const orderId = Number(inserted.lastInsertRowid);
+      db.prepare(`UPDATE vouchers SET status='redeemed',redeemed_at=?,redeemed_order_id=?,redeemed_client_id=?,redeemed_mac=?,redeemed_ip=? WHERE id=?`)
+        .run(now, orderId, clientId, mac, ip, voucher.id);
+      const order = db.prepare("SELECT * FROM orders WHERE id=?").get(orderId);
+      ensureInitialRouterGrant(order, context.router.id);
+      return order;
+    });
+    const order = createVoucherOrder();
+    recordFunnelEvent({eventId:context.event.id,routerId:context.router.id,clientId,mac,ip,orderId:order.id,orderRef:externalRef,step:"VOUCHER_REDEEMED",planId:voucher.plan_id,metadata:{voucher_serial:voucher.serial_number,batch_id:voucher.batch_id},source:"portal"});
+
+    return res.json({ok:true, order:externalRef, voucher:true, plan_name:voucher.plan_name,
+      router:{id:context.router.id,router_key:context.router.router_key}, status:order.status});
+  }
+  catch(error){
+    if(error.message === "VOUCHER_ALREADY_USED") return res.status(400).json({ok:false,error:"Este voucher acabou de ser utilizado."});
+    console.error("Falha no resgate de voucher:", error);
+    return res.status(500).json({ok:false,error:"Não foi possível ativar o voucher agora."});
+  }
+});
+
 app.get(
   "/api/order/:ref",
   async (req, res) => {
@@ -11278,6 +11397,15 @@ function getMikrotikPlanForOrder(order) {
 
   }
 
+  if(order.payment_method === "voucher" && order.voucher_batch_id){
+    const voucherPlan = db.prepare("SELECT mikrotik_profile,minutes,rate_limit FROM voucher_batches WHERE id=?").get(order.voucher_batch_id);
+    if(voucherPlan) return {
+      mikrotikProfile:voucherPlan.mikrotik_profile,
+      minutes:Number(order.minutes || voucherPlan.minutes),
+      rateLimit:mikrotikRateLimit(order.rate_limit || voucherPlan.rate_limit || "")
+    };
+  }
+
 
   if(
     order.event_id
@@ -11712,7 +11840,9 @@ app.get(
           o.mac AS order_mac,
           o.original_mac,
           o.ip AS order_ip,
-          o.access_expires_at
+          o.access_expires_at,
+          o.payment_method,
+          o.voucher_batch_id
 
         FROM router_access_grants g
 
@@ -11838,7 +11968,9 @@ app.get(
           o.mac AS order_mac,
           o.original_mac,
           o.ip AS order_ip,
-          o.access_expires_at
+          o.access_expires_at,
+          o.payment_method,
+          o.voucher_batch_id
 
         FROM router_access_grants g
 
@@ -21496,6 +21628,63 @@ app.put(
 // PLANOS
 // ============================================================
 // ============================================================
+
+app.get("/admin/api/events/:eventId/voucher-batches", adminAuth, (req,res) => {
+  const eventId = positiveId(req.params.eventId);
+  if(!eventId || !getEventById(eventId)) return res.status(404).json({ok:false,error:"Evento não encontrado"});
+  const batches = db.prepare(`SELECT b.*, COUNT(v.id) AS quantity,
+    SUM(CASE WHEN v.status='unused' THEN 1 ELSE 0 END) AS unused,
+    SUM(CASE WHEN v.status='redeemed' THEN 1 ELSE 0 END) AS redeemed
+    FROM voucher_batches b LEFT JOIN vouchers v ON v.batch_id=b.id
+    WHERE b.event_id=? GROUP BY b.id ORDER BY b.id DESC`).all(eventId);
+  res.json({ok:true,batches});
+});
+
+app.post("/admin/api/events/:eventId/voucher-batches", adminAuth, (req,res) => {
+  try{
+    const eventId = positiveId(req.params.eventId);
+    const quantity = Number(req.body?.quantity);
+    if(!eventId || !getEventById(eventId)) return res.status(404).json({ok:false,error:"Evento não encontrado"});
+    const plan = db.prepare(`SELECT * FROM event_plans WHERE event_id=? AND plan_key=? AND active=1 AND deleted_at IS NULL`).get(eventId, String(req.body?.plan_id || ""));
+    if(!plan) return res.status(400).json({ok:false,error:"Selecione um plano ativo do evento."});
+    if(!Number.isInteger(quantity) || quantity<1 || quantity>1000) return res.status(400).json({ok:false,error:"A quantidade deve estar entre 1 e 1.000 vouchers por lote."});
+
+    const codes = [];
+    const createBatch = db.transaction(() => {
+      const last = db.prepare("SELECT MAX(last_number) AS value FROM voucher_batches WHERE event_id=?").get(eventId)?.value || 0;
+      const first = Number(last)+1, end = first+quantity-1, now = nowIso();
+      const result = db.prepare(`INSERT INTO voucher_batches
+        (event_id,first_number,last_number,plan_id,plan_name,minutes,rate_limit,mikrotik_profile,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?)`).run(eventId,first,end,plan.plan_key,plan.name,plan.minutes,plan.rate_limit,plan.mikrotik_profile,now);
+      const batchId = Number(result.lastInsertRowid);
+      const insert = db.prepare("INSERT INTO vouchers (batch_id,event_id,serial_number,code_hash,code_last4,created_at) VALUES (?,?,?,?,?,?)");
+      for(let number=first;number<=end;number++){
+        let raw, hash;
+        do {
+          raw = crypto.randomBytes(8).toString("hex").toUpperCase();
+          hash = crypto.createHash("sha256").update(raw).digest("hex");
+        } while(db.prepare("SELECT 1 FROM vouchers WHERE code_hash=?").get(hash));
+        insert.run(batchId,eventId,number,hash,raw.slice(-4),now);
+        codes.push({number,code:`WIFI-${raw.match(/.{1,4}/g).join("-")}`});
+      }
+      return {batchId,first,end,now};
+    });
+    const created = createBatch();
+    res.status(201).json({ok:true,batch:{id:created.batchId,first_number:created.first,last_number:created.end,
+      plan_name:plan.name,minutes:plan.minutes,rate_limit:plan.rate_limit,quantity},codes});
+  }catch(error){
+    console.error("Erro ao gerar lote de vouchers:",error);
+    res.status(500).json({ok:false,error:"Não foi possível gerar o lote de vouchers."});
+  }
+});
+
+app.patch("/admin/api/voucher-batches/:batchId", adminAuth, (req,res) => {
+  const batchId = positiveId(req.params.batchId);
+  const active = req.body?.active === false || Number(req.body?.active) === 0 ? 0 : 1;
+  const result = db.prepare("UPDATE voucher_batches SET active=? WHERE id=?").run(active,batchId);
+  if(!result.changes) return res.status(404).json({ok:false,error:"Lote não encontrado"});
+  res.json({ok:true,active});
+});
 
 
 // ============================================================
