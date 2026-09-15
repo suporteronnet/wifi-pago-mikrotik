@@ -6715,6 +6715,14 @@ async function openEvent(eventId){
   }
 
 
+  const panelToRestore =
+    currentEventId === id
+    &&
+    ["monitoring", "devices", "configuration"].includes(currentEventDetailsPanel)
+      ? currentEventDetailsPanel
+      : "monitoring";
+
+
   const section =
     document.getElementById(
       "eventDetailsSection"
@@ -6881,9 +6889,10 @@ async function openEvent(eventId){
     );
 
 
-    // Abre sempre no monitoramento ao entrar no evento.
+    // Ao atualizar o evento já aberto, mantém o menu atual.
+    // Ao entrar em outro evento, começa pelo monitoramento.
     await showEventDetailsPanel(
-      "monitoring"
+      panelToRestore
     );
 
 
