@@ -1637,10 +1637,16 @@ body:before{
     <div class="voucher-entry" style="margin-top:18px;padding:16px;border:1px solid #334155;border-radius:14px;background:#0b1628;">
       <strong>Tem um voucher de acesso?</strong>
       <p style="margin:6px 0 10px;color:#a8b6ca;font-size:13px;">Digite o código para liberar o plano sem cobrança.</p>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <input id="voucherCode" type="text" autocomplete="off" autocapitalize="characters" maxlength="24" placeholder="WIFI-XXXX-XXXX-XXXX-XXXX" aria-label="Código do voucher" style="flex:1;min-width:180px;padding:12px;border:1px solid #334155;border-radius:9px;background:#071225;color:#fff;">
-        <button id="redeemVoucherButton" type="button" onclick="redeemVoucher()" class="wizard-button" style="width:auto;margin:0;padding:12px 18px;">USAR VOUCHER</button>
+      <div id="voucherCodeInputs" role="group" aria-label="Código de seis dígitos" style="display:flex;justify-content:center;align-items:center;gap:7px;margin:12px 0;">
+        <input class="voucher-digit" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" autocomplete="one-time-code" aria-label="Dígito 1" oninput="handleVoucherDigit(this,0)" onkeydown="handleVoucherKeydown(event,this,0)" onpaste="handleVoucherPaste(event)" style="width:40px;height:48px;text-align:center;font-size:21px;font-weight:800;border:1px solid #64748b;border-radius:8px;background:#071225;color:#fff;">
+        <input class="voucher-digit" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Dígito 2" oninput="handleVoucherDigit(this,1)" onkeydown="handleVoucherKeydown(event,this,1)" onpaste="handleVoucherPaste(event)" style="width:40px;height:48px;text-align:center;font-size:21px;font-weight:800;border:1px solid #64748b;border-radius:8px;background:#071225;color:#fff;">
+        <input class="voucher-digit" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Dígito 3" oninput="handleVoucherDigit(this,2)" onkeydown="handleVoucherKeydown(event,this,2)" onpaste="handleVoucherPaste(event)" style="width:40px;height:48px;text-align:center;font-size:21px;font-weight:800;border:1px solid #64748b;border-radius:8px;background:#071225;color:#fff;">
+        <span aria-hidden="true" style="font-size:22px;font-weight:800;color:#94a3b8;">-</span>
+        <input class="voucher-digit" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Dígito 4" oninput="handleVoucherDigit(this,3)" onkeydown="handleVoucherKeydown(event,this,3)" onpaste="handleVoucherPaste(event)" style="width:40px;height:48px;text-align:center;font-size:21px;font-weight:800;border:1px solid #64748b;border-radius:8px;background:#071225;color:#fff;">
+        <input class="voucher-digit" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Dígito 5" oninput="handleVoucherDigit(this,4)" onkeydown="handleVoucherKeydown(event,this,4)" onpaste="handleVoucherPaste(event)" style="width:40px;height:48px;text-align:center;font-size:21px;font-weight:800;border:1px solid #64748b;border-radius:8px;background:#071225;color:#fff;">
+        <input class="voucher-digit" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Dígito 6" oninput="handleVoucherDigit(this,5)" onkeydown="handleVoucherKeydown(event,this,5)" onpaste="handleVoucherPaste(event)" style="width:40px;height:48px;text-align:center;font-size:21px;font-weight:800;border:1px solid #64748b;border-radius:8px;background:#071225;color:#fff;">
       </div>
+      <button id="redeemVoucherButton" type="button" onclick="redeemVoucher()" class="wizard-button" style="width:100%;margin:0;padding:12px 18px;">USAR VOUCHER</button>
       <div id="voucherMessage" class="portal-form-message" role="status" aria-live="polite" hidden></div>
     </div>
     <div id="planCheckoutMessage" class="portal-form-message" role="status" aria-live="polite" hidden></div>
@@ -4790,15 +4796,49 @@ function showPortalFormMessage(message, fieldId="", type="error"){
   }
 }
 
+function getVoucherDigits(){
+  return Array.from(document.querySelectorAll("#voucherCodeInputs .voucher-digit"), input => input.value.replace(/\D/g, "")).join("");
+}
+
+function setVoucherDigits(value){
+  const digits = String(value || "").replace(/\D/g, "").slice(0,6);
+  const inputs = document.querySelectorAll("#voucherCodeInputs .voucher-digit");
+  inputs.forEach((input,index) => { input.value = digits[index] || ""; });
+  inputs[Math.min(digits.length,5)]?.focus();
+}
+
+function handleVoucherDigit(input,index){
+  const digits = input.value.replace(/\D/g, "");
+  if(digits.length > 1){ setVoucherDigits(digits); return; }
+  input.value = digits;
+  if(digits && index < 5) document.querySelectorAll("#voucherCodeInputs .voucher-digit")[index + 1]?.focus();
+}
+
+function handleVoucherKeydown(event,input,index){
+  if(event.key === "Backspace" && !input.value && index > 0){
+    const previous = document.querySelectorAll("#voucherCodeInputs .voucher-digit")[index - 1];
+    previous.focus(); previous.value = ""; event.preventDefault();
+  }else if(event.key === "ArrowLeft" && index > 0){
+    document.querySelectorAll("#voucherCodeInputs .voucher-digit")[index - 1]?.focus();
+  }else if(event.key === "ArrowRight" && index < 5){
+    document.querySelectorAll("#voucherCodeInputs .voucher-digit")[index + 1]?.focus();
+  }
+}
+
+function handleVoucherPaste(event){
+  event.preventDefault();
+  setVoucherDigits(event.clipboardData?.getData("text") || "");
+}
+
 async function redeemVoucher(){
-  const input = document.getElementById("voucherCode");
   const message = document.getElementById("voucherMessage");
   const button = document.getElementById("redeemVoucherButton");
   const form = readRecoveryForm();
-  const code = String(input?.value || "").trim();
-  if(!code){
+  const code = getVoucherDigits();
+  if(code.length !== 6){
     message.hidden = false; message.className = "portal-form-message error";
-    message.textContent = "Digite o código do voucher."; input?.focus(); return;
+    message.textContent = "Informe os seis números do voucher.";
+    document.querySelector("#voucherCodeInputs .voucher-digit")?.focus(); return;
   }
   if(form.name.length < 2 || form.phoneDigits.length < 10 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)){
     message.hidden = false; message.className = "portal-form-message error";

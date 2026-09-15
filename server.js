@@ -10408,22 +10408,28 @@ app.post(
 
 const limitVoucherByIp = createRateLimiter({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 8,
   keyFor: req => req.ip,
   message: "Muitas tentativas de voucher. Aguarde alguns minutos."
 });
+const limitVoucherByClient = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  keyFor: req => req.body?.client_id,
+  message: "Muitas tentativas neste aparelho. Aguarde alguns minutos."
+});
 
 function normalizeVoucherCode(value){
-  return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^WIFI/, "");
+  return String(value || "").replace(/\D/g, "");
 }
 
-app.post("/api/voucher/redeem", limitVoucherByIp, (req, res) => {
+app.post("/api/voucher/redeem", limitVoucherByIp, limitVoucherByClient, (req, res) => {
   try{
     const context = resolvePortalContext(req.body?.event_key, req.body?.router_key);
     if(!context.ok) return res.status(400).json({ok:false, error:context.error});
 
     const code = normalizeVoucherCode(req.body?.code);
-    if(!/^[A-F0-9]{16}$/.test(code)) return res.status(400).json({ok:false, error:"Confira o código do voucher e tente novamente."});
+    if(!/^\d{6}$/.test(code)) return res.status(400).json({ok:false, error:"Informe os seis números do voucher."});
 
     const name = normalizeCustomerName(req.body?.customer_name);
     const phone = normalizeCustomerPhone(req.body?.customer_phone);
@@ -21661,11 +21667,13 @@ app.post("/admin/api/events/:eventId/voucher-batches", adminAuth, (req,res) => {
       for(let number=first;number<=end;number++){
         let raw, hash;
         do {
-          raw = crypto.randomBytes(8).toString("hex").toUpperCase();
+          raw = String(crypto.randomInt(0, 1000000)).padStart(6,"0");
           hash = crypto.createHash("sha256").update(raw).digest("hex");
-        } while(db.prepare("SELECT 1 FROM vouchers WHERE code_hash=?").get(hash));
+          if(!db.prepare("SELECT 1 FROM vouchers WHERE code_hash=?").get(hash)) break;
+          raw = null;
+        } while(raw === null);
         insert.run(batchId,eventId,number,hash,raw.slice(-4),now);
-        codes.push({number,code:`WIFI-${raw.match(/.{1,4}/g).join("-")}`});
+        codes.push({number,code:`${raw.slice(0,3)}-${raw.slice(3)}`});
       }
       return {batchId,first,end,now};
     });
