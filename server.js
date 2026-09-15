@@ -766,6 +766,7 @@ CREATE TABLE IF NOT EXISTS voucher_batches (
   amount REAL NOT NULL DEFAULT 0,
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
+  deleted_at TEXT,
   FOREIGN KEY(event_id) REFERENCES events(id)
 );
 CREATE TABLE IF NOT EXISTS vouchers (
@@ -792,6 +793,9 @@ CREATE INDEX IF NOT EXISTS idx_vouchers_status ON vouchers(event_id, status);
 
 if(!db.prepare("PRAGMA table_info(voucher_batches)").all().some(column => column.name === "amount")){
   db.exec("ALTER TABLE voucher_batches ADD COLUMN amount REAL NOT NULL DEFAULT 0");
+}
+if(!db.prepare("PRAGMA table_info(voucher_batches)").all().some(column => column.name === "deleted_at")){
+  db.exec("ALTER TABLE voucher_batches ADD COLUMN deleted_at TEXT");
 }
 
 
@@ -16175,7 +16179,10 @@ app.get(
             o.event_id,
             e.name AS event_name,
             o.plan_id,
+            COALESCE(p.name,o.plan_id) AS plan_name,
             o.amount,
+            o.payment_method,
+            o.voucher_serial,
             o.minutes,
             o.rate_limit,
             o.effective_mac,
@@ -16191,6 +16198,8 @@ app.get(
 
           LEFT JOIN events e
             ON e.id=o.event_id
+          LEFT JOIN event_plans p
+            ON p.event_id=o.event_id AND p.plan_key=o.plan_id
 
           WHERE
             o.client_id=?
@@ -18522,7 +18531,9 @@ app.get(
             r.name AS router_name,
             r.router_key AS router_key,
             o.status AS order_status,
-            o.amount AS order_amount
+            o.amount AS order_amount,
+            o.payment_method AS order_payment_method,
+            o.voucher_serial AS order_voucher_serial
           FROM funnel_events f
           LEFT JOIN customers c
             ON c.client_id=f.client_id
@@ -18664,6 +18675,8 @@ app.get(
 
             o.status AS order_status,
             o.amount AS order_amount,
+            o.payment_method AS order_payment_method,
+            o.voucher_serial AS order_voucher_serial,
             o.approved_at AS order_approved_at,
 
             CASE
@@ -21648,8 +21661,19 @@ app.get("/admin/api/events/:eventId/voucher-batches", adminAuth, (req,res) => {
     SUM(CASE WHEN v.status='unused' THEN 1 ELSE 0 END) AS unused,
     SUM(CASE WHEN v.status='redeemed' THEN 1 ELSE 0 END) AS redeemed
     FROM voucher_batches b LEFT JOIN vouchers v ON v.batch_id=b.id
-    WHERE b.event_id=? GROUP BY b.id ORDER BY b.id DESC`).all(eventId);
+    WHERE b.event_id=? AND b.deleted_at IS NULL GROUP BY b.id ORDER BY b.id DESC`).all(eventId);
   res.json({ok:true,batches});
+});
+
+app.get("/admin/api/voucher-batches/:batchId/vouchers", adminAuth, (req,res) => {
+  const batchId = positiveId(req.params.batchId);
+  const batch = db.prepare("SELECT id FROM voucher_batches WHERE id=? AND deleted_at IS NULL").get(batchId);
+  if(!batch) return res.status(404).json({ok:false,error:"Lote não encontrado"});
+  const vouchers = db.prepare(`SELECT v.serial_number,v.status,v.created_at,v.redeemed_at,
+      v.redeemed_mac,v.redeemed_ip,c.name AS customer_name,c.phone AS customer_phone
+    FROM vouchers v LEFT JOIN customers c ON c.client_id=v.redeemed_client_id
+    WHERE v.batch_id=? ORDER BY v.serial_number ASC`).all(batchId);
+  res.json({ok:true,vouchers});
 });
 
 function escapeWifiQrField(value){
@@ -21708,9 +21732,23 @@ app.post("/admin/api/events/:eventId/voucher-batches", adminAuth, async (req,res
 app.patch("/admin/api/voucher-batches/:batchId", adminAuth, (req,res) => {
   const batchId = positiveId(req.params.batchId);
   const active = req.body?.active === false || Number(req.body?.active) === 0 ? 0 : 1;
-  const result = db.prepare("UPDATE voucher_batches SET active=? WHERE id=?").run(active,batchId);
+  const result = db.prepare("UPDATE voucher_batches SET active=? WHERE id=? AND deleted_at IS NULL").run(active,batchId);
   if(!result.changes) return res.status(404).json({ok:false,error:"Lote não encontrado"});
   res.json({ok:true,active});
+});
+
+app.delete("/admin/api/voucher-batches/:batchId", adminAuth, (req,res) => {
+  const batchId = positiveId(req.params.batchId);
+  const batch = db.prepare("SELECT id FROM voucher_batches WHERE id=? AND deleted_at IS NULL").get(batchId);
+  if(!batch) return res.status(404).json({ok:false,error:"Lote não encontrado"});
+  const archive = db.transaction(() => {
+    const removed = db.prepare("DELETE FROM vouchers WHERE batch_id=? AND status='unused'").run(batchId);
+    const redeemed = db.prepare("SELECT COUNT(*) AS count FROM vouchers WHERE batch_id=? AND status='redeemed'").get(batchId).count;
+    db.prepare("UPDATE voucher_batches SET active=0,deleted_at=? WHERE id=?").run(nowIso(),batchId);
+    return {removed:Number(removed.changes || 0),preserved:Number(redeemed || 0)};
+  });
+  const result = archive();
+  res.json({ok:true,...result});
 });
 
 

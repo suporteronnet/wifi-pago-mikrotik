@@ -5237,7 +5237,7 @@ function isApproved(order){
 
 function statusInfo(order){
 
-  if(order.payment_method === "voucher"){
+  if(order.payment_method === "voucher" || order.order_payment_method === "voucher"){
     const voucherLabel = `Voucher #${Number(order.voucher_serial) || "?"}`;
     return {
       text: order.status === "approved" ? `${voucherLabel} usado · Ativo` : `${voucherLabel} usado · Liberando`,
@@ -7028,11 +7028,55 @@ async function loadVoucherBatches(){
     const response = await fetch(`/admin/api/events/${currentEventId}/voucher-batches`);
     const data = await response.json();
     if(!response.ok || !data.ok) throw new Error(data.error || "Falha ao carregar lotes");
-    list.innerHTML = (data.batches || []).map(batch => `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 0;border-top:1px solid #26364d;font-size:12px;">
-      <span><b>Voucher ${batch.first_number}–${batch.last_number}</b> · ${escapeHtml(batch.plan_name)} · ${money(batch.amount)} · ${Number(batch.minutes)} min · ${escapeHtml(batch.rate_limit)}<br><span style="color:#94a3b8">${Number(batch.unused)} disponíveis · ${Number(batch.redeemed)} usados</span></span>
-      <button type="button" onclick="toggleVoucherBatch(${Number(batch.id)},${Number(batch.active) ? 0 : 1})" style="padding:7px 9px;border-radius:7px;border:1px solid #475569;background:#172338;color:#e2e8f0;cursor:pointer;">${Number(batch.active) ? "Desativar" : "Ativar"}</button>
+    list.innerHTML = (data.batches || []).map(batch => `<div style="padding:10px 0;border-top:1px solid #26364d;font-size:12px;">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
+        <span><b>Voucher ${batch.first_number}–${batch.last_number}</b> · ${escapeHtml(batch.plan_name)} · ${money(batch.amount)} · ${Number(batch.minutes)} min · ${escapeHtml(batch.rate_limit)}<br><span style="color:#94a3b8">${Number(batch.unused)} disponíveis · ${Number(batch.redeemed)} usados</span></span>
+        <span style="display:flex;gap:6px;">
+          <button type="button" onclick="toggleVoucherBatch(${Number(batch.id)},${Number(batch.active) ? 0 : 1})" style="padding:7px 9px;border-radius:7px;border:1px solid #475569;background:#172338;color:#e2e8f0;cursor:pointer;">${Number(batch.active) ? "Desativar" : "Ativar"}</button>
+          <button type="button" onclick="deleteVoucherBatch(${Number(batch.id)},${Number(batch.first_number)},${Number(batch.last_number)})" style="padding:7px 9px;border-radius:7px;border:1px solid #991b1b;background:#450a0a;color:#fecaca;cursor:pointer;">Apagar</button>
+        </span>
+      </div>
+      <details style="margin-top:8px;" ontoggle="loadVoucherRows(${Number(batch.id)},this)">
+        <summary style="cursor:pointer;color:#93c5fd;">Ver status dos ${Number(batch.quantity)} vouchers</summary>
+        <div id="voucherRowsBatch${Number(batch.id)}" style="margin-top:8px;color:#94a3b8;">Abra para carregar os vouchers.</div>
+      </details>
     </div>`).join("") || '<div style="padding-top:10px;color:#94a3b8;font-size:12px;">Nenhum lote gerado ainda.</div>';
   }catch(error){ list.textContent = error.message; }
+}
+
+async function loadVoucherRows(batchId, details){
+  if(!details.open) return;
+  const target = document.getElementById(`voucherRowsBatch${batchId}`);
+  if(!target) return;
+  target.textContent = "Carregando vouchers...";
+  try{
+    const response = await fetch(`/admin/api/voucher-batches/${batchId}/vouchers`,{cache:"no-store"});
+    const data = await response.json();
+    if(!response.ok || !data.ok) throw new Error(data.error || "Não foi possível carregar os vouchers.");
+    target.innerHTML = `<div style="max-height:340px;overflow:auto;border:1px solid #26364d;border-radius:8px;"><table style="width:100%;border-collapse:collapse;min-width:580px;font-size:11px;"><thead><tr style="text-align:left;color:#94a3b8;background:#111d31;"><th style="padding:8px;">Nº</th><th style="padding:8px;">Status</th><th style="padding:8px;">Cliente</th><th style="padding:8px;">Usado em</th><th style="padding:8px;">MAC</th><th style="padding:8px;">IP</th></tr></thead><tbody>${(data.vouchers || []).map(voucher => {
+      const used = voucher.status === "redeemed";
+      const client = voucher.customer_name || voucher.customer_phone || "—";
+      return `<tr style="border-top:1px solid #26364d;"><td style="padding:7px;">${Number(voucher.serial_number)}</td><td style="padding:7px;color:${used ? "#4ade80" : "#93c5fd"};font-weight:700;">${used ? "Usado" : "Disponível"}</td><td style="padding:7px;">${escapeHtml(client)}</td><td style="padding:7px;">${used ? dateBR(voucher.redeemed_at) : "—"}</td><td style="padding:7px;">${escapeHtml(voucher.redeemed_mac || "—")}</td><td style="padding:7px;">${escapeHtml(voucher.redeemed_ip || "—")}</td></tr>`;
+    }).join("")}</tbody></table></div>`;
+  }catch(error){ target.textContent = error.message; }
+}
+
+async function deleteVoucherBatch(batchId, first, last){
+  if(!confirm(`Apagar o lote de vouchers ${first}–${last}? Os códigos ainda não usados serão removidos. Os já usados ficam preservados no histórico e nos logs.`)) return;
+  const message = document.getElementById("voucherBatchMessage");
+  try{
+    const response = await fetch(`/admin/api/voucher-batches/${batchId}`,{method:"DELETE"});
+    const data = await response.json();
+    if(!response.ok || !data.ok) throw new Error(data.error || "Não foi possível apagar o lote.");
+    if(Number(window.voucherPrintData?.batch?.id) === Number(batchId)){
+      window.voucherPrintData = null;
+      document.getElementById("voucherGeneratedCodes").innerHTML = "";
+      window.voucherCodesDownload = "";
+    }
+    message.style.color = "#4ade80";
+    message.textContent = `Lote apagado: ${data.removed} códigos não usados removidos; ${data.preserved} vouchers usados preservados nos logs.`;
+    await loadVoucherBatches();
+  }catch(error){ message.style.color = "#f87171"; message.textContent = error.message; }
 }
 
 async function createVoucherBatch(){
@@ -7080,17 +7124,37 @@ function printVoucherCards(){
   const priceText = Number(data.batch.amount || 0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
   const cards = data.codes.map(item => `<article class="ticket">
     <header>WI-FI TOTAL <span>ACESSO WI-FI</span></header>
-    <div class="network">${escape(data.wifi.ssid)}</div>
+    <div class="network" title="${escape(data.wifi.ssid)}">${escape(data.wifi.ssid)}</div>
     <div class="ticket-body"><img class="qr" src="${escape(data.wifi.qr_data_url)}" alt="QR Code para conectar ao Wi-Fi"><div class="ticket-info">
       <div class="voucher-code">${escape(item.code)}</div>
       <div class="plan">${escape(data.batch.plan_name)}</div>
       <div class="details">${durationText} · ${escape(data.batch.rate_limit)}</div>
       <div class="price">${priceText}</div>
     </div></div>
-    <footer>Conecte ao Wi-Fi e use o código no portal · #${Number(item.number)}</footer>
+    <footer><span>Conecte-se ao Wi-Fi e use o código no portal</span><b>VOUCHER #${Number(item.number)}</b></footer>
   </article>`).join("");
   const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cartões de voucher</title><style>
-    *{box-sizing:border-box}body{margin:0;padding:10mm;font-family:Arial,sans-serif;color:#111827}.toolbar{display:flex;gap:10px;margin-bottom:12px}.toolbar button{padding:10px 16px;border:0;border-radius:6px;background:#1d4ed8;color:#fff;font-weight:700;cursor:pointer}.sheet{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3mm}.ticket{height:38mm;padding:2.4mm;border:1px dashed #64748b;display:flex;flex-direction:column;overflow:hidden;break-inside:avoid;page-break-inside:avoid}.ticket header{text-align:center;color:#1769aa;font-size:10pt;font-weight:800;letter-spacing:.4px;border-bottom:1px solid #cbd5e1;padding-bottom:1mm}.ticket header span{float:right;color:#64748b;font-size:6pt;letter-spacing:0;font-weight:500}.network{text-align:center;font-weight:700;font-size:7.5pt;margin:1mm 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ticket-body{display:flex;align-items:center;gap:2mm;min-height:0;flex:1}.qr{width:21mm;height:21mm;object-fit:contain;image-rendering:pixelated}.ticket-info{min-width:0;line-height:1.2}.voucher-code{font-size:15pt;font-weight:800;letter-spacing:1px;white-space:nowrap}.plan{font-size:8pt;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.details{font-size:7pt;color:#475569;white-space:nowrap}.price{font-size:9pt;font-weight:800;margin-top:.6mm}.ticket footer{border-top:1px solid #cbd5e1;padding-top:.8mm;text-align:center;font-size:5.8pt;color:#475569;white-space:nowrap}@page{size:A4 landscape;margin:6mm}@media print{body{padding:0}.toolbar{display:none}.sheet{gap:2.5mm}.ticket{height:37mm}}</style></head><body><div class="toolbar"><button onclick="window.print()">Imprimir / Salvar em PDF</button><button onclick="window.close()">Fechar</button></div><main class="sheet">${cards}</main></body></html>`;
+    *{box-sizing:border-box}
+    body{margin:0;padding:10mm;font-family:Arial,sans-serif;color:#111827}
+    .toolbar{display:flex;gap:10px;margin-bottom:12px}
+    .toolbar button{padding:10px 16px;border:0;border-radius:6px;background:#1d4ed8;color:#fff;font-weight:700;cursor:pointer}
+    .sheet{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3mm}
+    .ticket{height:41mm;padding:2.2mm;border:1px dashed #64748b;display:flex;flex-direction:column;overflow:hidden;break-inside:avoid;page-break-inside:avoid}
+    .ticket header{position:relative;flex:0 0 auto;text-align:center;color:#1769aa;font-size:10pt;font-weight:800;letter-spacing:.4px;border-bottom:1px solid #cbd5e1;padding:0 13mm 1mm}
+    .ticket header span{position:absolute;right:0;top:0;color:#64748b;font-size:5.5pt;letter-spacing:0;font-weight:500;white-space:nowrap}
+    .network{display:block;flex:0 0 auto;width:100%;min-width:0;height:4mm;line-height:4mm;text-align:center;font-weight:700;font-size:7.5pt;margin:.7mm 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ticket-body{display:flex;align-items:center;gap:2mm;width:100%;flex:1 1 auto;min-height:0;overflow:hidden}
+    .qr{display:block;flex:0 0 19mm;width:19mm;height:19mm;object-fit:contain;image-rendering:pixelated}
+    .ticket-info{flex:1 1 auto;min-width:0;overflow:hidden;line-height:1.2}
+    .voucher-code{font-size:15pt;font-weight:800;letter-spacing:1px;white-space:nowrap}
+    .plan{font-size:8pt;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .details{font-size:7pt;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .price{font-size:9pt;font-weight:800;margin-top:.6mm;white-space:nowrap}
+    .ticket footer{display:flex;flex:0 0 auto;flex-direction:column;align-items:center;gap:.4mm;border-top:1px solid #cbd5e1;padding-top:.7mm;text-align:center;font-size:6.5pt;line-height:1.15;color:#475569;white-space:nowrap}
+    .ticket footer b{font-size:6pt;letter-spacing:.25px;color:#1769aa}
+    @page{size:A4 landscape;margin:6mm}
+    @media print{body{padding:0}.toolbar{display:none}.sheet{gap:2.5mm}.ticket{height:40mm}}
+  </style></head><body><div class="toolbar"><button onclick="window.print()">Imprimir / Salvar em PDF</button><button onclick="window.close()">Fechar</button></div><main class="sheet">${cards}</main></body></html>`;
   const popup = window.open("","_blank");
   if(!popup){
     const link=document.createElement("a");
@@ -17290,6 +17354,8 @@ function buildLogRows(){
       plan_id:item.plan_id || "-",
       amount:Number(item.order_amount || 0),
       status:item.order_status || "funnel",
+      payment_method:item.order_payment_method || null,
+      voucher_serial:item.order_voucher_serial || null,
       created_at:item.created_at,
       metadata:item.metadata || null
     });
@@ -18858,6 +18924,11 @@ function openLogDeviceHistory(groupKey){
         );
       }
 
+      if(row.payment_method === "voucher" || row.order_payment_method === "voucher"){
+        const voucherSerial = Number(row.voucher_serial || row.order_voucher_serial || 0);
+        details.push(voucherSerial ? `Voucher #${voucherSerial}` : "Voucher usado");
+      }
+
       if(row.ip){
         details.push(
           "IP: " + row.ip
@@ -19029,6 +19100,14 @@ function logGroupDisplayRow(group){
 }
 
 
+function logAmountDisplay(row){
+  if(row?.payment_method === "voucher" || row?.order_payment_method === "voucher" || row?.funnel_step === "VOUCHER_REDEEMED"){
+    const serial = Number(row.voucher_serial || row.order_voucher_serial || 0);
+    return serial ? `Voucher #${serial}` : "Voucher";
+  }
+  return money(row?.amount);
+}
+
 function renderLogs(){
 
   const rows =
@@ -19147,7 +19226,7 @@ function renderLogs(){
           >📋 VER ${group.rows.length} LOG${group.rows.length === 1 ? "" : "S"}</button>
         </td>
         <td>${escapeHtml(row.plan_id && row.plan_id !== "-" ? planName(row.plan_id) : "-")}</td>
-        <td>${isFunnel && !row.order_id && !row.external_ref ? "-" : money(row.amount)}</td>
+        <td>${isFunnel && !row.order_id && !row.external_ref ? "-" : escapeHtml(logAmountDisplay(row))}</td>
         <td>${escapeHtml(group.mac || normalizedLogMac(row) || "-")}</td>
         <td>${escapeHtml(group.ip || row.ip || "-")}</td>
         <td><span class="badge ${status.className}">${escapeHtml(status.text)}</span></td>
@@ -19187,7 +19266,7 @@ function renderLogs(){
             <div style="color:#94a3b8;font-size:12px;">${dateBR(row.created_at)}</div>
             <div style="margin-top:5px;font-weight:bold;">${escapeHtml(row.plan_id && row.plan_id !== "-" ? planName(row.plan_id) : "Jornada do cliente")}</div>
           </div>
-          <div class="order-price">${isFunnel && !row.order_id && !row.external_ref ? "" : money(row.amount)}</div>
+          <div class="order-price">${isFunnel && !row.order_id && !row.external_ref ? "" : escapeHtml(logAmountDisplay(row))}</div>
         </div>
         <div style="margin-bottom:10px;"><span class="badge ${status.className}">${escapeHtml(status.text)}</span></div>
         <div class="order-row"><span class="order-label">Cliente</span><span class="order-value">${escapeHtml(clientLabel)}</span></div>
@@ -19306,6 +19385,7 @@ function describeAdminAuditAction(entry){
   const route = String(entry?.route || "").split("?")[0];
   const rules = [
     [/^\/admin\/api\/audit(?:\/|$)/, method === "DELETE" ? "Auditoria limpa" : "Auditoria consultada"],
+    [/\/admin\/api\/(?:events\/\d+\/voucher-batches|voucher-batches)(?:\/|$)/, method === "DELETE" ? "Lote de vouchers apagado" : method === "POST" ? "Lote de vouchers gerado" : "Lote de vouchers atualizado"],
     [/\/admin\/api\/plans(?:\/|$)/, "Plano atualizado"],
     [/\/admin\/api\/events(?:\/|$)/, method === "POST" ? "Evento criado" : method === "DELETE" ? "Evento removido" : "Evento atualizado"],
     [/\/admin\/api\/(?:internet-v2|routers)(?:\/|$)/, "Configuração da MikroTik atualizada"],
@@ -25855,15 +25935,19 @@ async function openCustomerData(
                   <div class="customer-history-line">
                     <strong>Plano:</strong>
                     ${escapeHtml(
-                      payment.plan_id || "-"
+                      payment.plan_name || payment.plan_id || "-"
                     )}
                   </div>
 
+                  ${payment.payment_method === "voucher" ? `
+                    <div class="customer-history-line">
+                      <strong>Voucher:</strong> #${Number(payment.voucher_serial) || "?"}
+                    </div>
+                  ` : ""}
+
                   <div class="customer-history-line">
                     <strong>Valor:</strong>
-                    ${customerPanelMoney(
-                      payment.amount
-                    )}
+                    ${payment.payment_method === "voucher" ? "Voucher" : customerPanelMoney(payment.amount)}
                   </div>
 
                   <div class="customer-history-line">
