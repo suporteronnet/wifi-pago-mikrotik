@@ -24124,6 +24124,20 @@ function renderDevices(){
           device.command_type ===
           "PIX";
 
+        const isVoucher =
+          device.payment_method === "voucher";
+
+        const paymentLabel =
+          isVoucher
+            ? `Voucher #${Number(device.voucher_serial) || "?"}`
+            : "PIX";
+
+        const paymentValue =
+          isVoucher ? "Voucher" : money(device.amount);
+
+        const deviceActionName =
+          device.device_name || (isVoucher ? paymentLabel : "Cliente PIX");
+
 
         const isExpired =
           Boolean(
@@ -24169,7 +24183,7 @@ function renderDevices(){
 
             <div class="device-date">
               Pagamento:
-              PIX
+              ${escapeHtml(paymentLabel)}
             </div>
 
             <div class="device-date">
@@ -24184,9 +24198,7 @@ function renderDevices(){
 
             <div class="device-date">
               Valor:
-              ${money(
-                device.amount
-              )}
+              ${paymentValue}
             </div>
 
             <div class="device-date">
@@ -24231,7 +24243,7 @@ function renderDevices(){
               data-mac="${escapeHtml(
                 device.mac || ""
               )}"
-              data-name="Cliente PIX"
+              data-name="${escapeHtml(deviceActionName)}"
             >
 
               ⛔ ENCERRAR ACESSO AGORA
@@ -24266,7 +24278,7 @@ function renderDevices(){
 
             <div class="device-date">
               Pagamento:
-              PIX aprovado
+              ${escapeHtml(isVoucher ? paymentLabel : "PIX aprovado")}
             </div>
 
             <div class="device-date">
@@ -24281,9 +24293,7 @@ function renderDevices(){
 
             <div class="device-date">
               Valor:
-              ${money(
-                device.amount
-              )}
+              ${paymentValue}
             </div>
 
             <div class="device-date">
@@ -24316,7 +24326,7 @@ function renderDevices(){
 
             <div class="device-date">
               Pagamento:
-              PIX
+              ${escapeHtml(paymentLabel)}
             </div>
 
             <div class="device-date">
@@ -24331,9 +24341,7 @@ function renderDevices(){
 
             <div class="device-date">
               Valor:
-              ${money(
-                device.amount
-              )}
+              ${paymentValue}
             </div>
 
             <div class="device-date">

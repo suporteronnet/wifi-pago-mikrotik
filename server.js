@@ -14983,6 +14983,10 @@ app.get(
 
             o.amount,
 
+            o.payment_method,
+
+            o.voucher_serial,
+
             o.minutes,
 
             o.rate_limit,
@@ -15340,7 +15344,9 @@ app.get(
                 mac,
 
               device_name:
-                "Cliente PIX",
+                row.payment_method === "voucher"
+                  ? `Cliente Voucher #${Number(row.voucher_serial) || "?"}`
+                  : "Cliente PIX",
 
               minutes:
                 Number(
@@ -15390,7 +15396,13 @@ app.get(
                 "pix",
 
               payment_type:
-                "pix",
+                row.payment_method || "pix",
+
+              payment_method:
+                row.payment_method || "pix",
+
+              voucher_serial:
+                row.voucher_serial || null,
 
               plan_id:
                 row.plan_id,
