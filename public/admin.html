@@ -1,4 +1,4 @@
-<!-- =========================================================
+﻿<!-- =========================================================
      BLOCO 1/6 - ESTRUTURA INICIAL E CSS BASE
 ========================================================= -->
 
@@ -19838,7 +19838,7 @@ function buildGeneratedHotspotLogin(
     "${routerKey}";
 
   var portal =
-    "https://wifi-pago-mikrotik-production-44d5.up.railway.app/";
+    "https://wifi-total.duckdns.org/";
 
   var destino =
 
@@ -20019,7 +20019,7 @@ function buildMikrotikPullScript(
 
   const source = [
 
-    ':local baseUrl "https://wifi-pago-mikrotik-production-44d5.up.railway.ap";',
+    ':local baseUrl "https://wifi-total.duckdns.org";',
     `:local routerKey "${routerKey}";`,
     `:local token "${token}";`,
     ':local headers ("x-router-key: " . $routerKey . ",x-mikrotik-token: " . $token);',
@@ -20221,7 +20221,7 @@ function buildMikrotikPullScript(
   lines.push("");
 
   lines.push('/system script add name="WIFI-PAGO-PLAN-SYNC" policy=read,write,test source={');
-  lines.push(':local baseUrl "https://wifi-pago-mikrotik-production-44d5.up.railway.app";');
+  lines.push(':local baseUrl "https://wifi-total.duckdns.org";');
   lines.push(`:local routerKey "${routerKey}";`);
   lines.push(`:local token "${token}";`);
   lines.push(':local headers ("x-router-key: " . $routerKey . ",x-mikrotik-token: " . $token);');
@@ -20515,7 +20515,7 @@ function buildMikrotikAdminPullScript(
 
   const source = [
 
-    ':local baseUrl "https://wifi-pago-mikrotik-production-44d5.up.railway.app";',
+    ':local baseUrl "https://wifi-total.duckdns.org";',
 
     `:local routerKey "${routerKey}";`,
 
@@ -21456,7 +21456,7 @@ function buildSingleMikrotikNetworkScript(eventData, router){
     "",
     "# LIBERAR O PORTAL ANTES DO LOGIN",
     '/ip hotspot walled-garden remove [find comment="WIFI-PAGO-PORTAL"]',
-    '/ip hotspot walled-garden add dst-host="wifi-pago-mikrotik-production-44d5.up.railway.app" action=allow comment="WIFI-PAGO-PORTAL"',
+    '/ip hotspot walled-garden add dst-host="wifi-total.duckdns.org" action=allow comment="WIFI-PAGO-PORTAL"',
     ""
   );
 
@@ -21519,7 +21519,7 @@ function buildMikrotikHeartbeatScript(
 
   const heartbeatSource = [
 
-    ':local heartbeatUrl "https://wifi-pago-mikrotik-production-44d5.up.railway.app/api/mikrotik/heartbeat";',
+    ':local heartbeatUrl "https://wifi-total.duckdns.org/api/mikrotik/heartbeat";',
     `:local routerKey "${routerKey}";`,
     `:local token "${token}";`,
     ':local headers ("Content-Type: application/json,x-router-key: " . $routerKey . ",x-mikrotik-token: " . $token);',
@@ -21598,7 +21598,7 @@ function buildMikrotikHeartbeatScript(
 
   const presenceSource = [
 
-    ':local presenceUrl "https://wifi-pago-mikrotik-production-44d5.up.railway.app/api/mikrotik/presence";',
+    ':local presenceUrl "https://wifi-total.duckdns.org/api/mikrotik/presence";',
     `:local routerKey "${routerKey}";`,
     `:local token "${token}";`,
     ':local headers ("Content-Type: application/json,x-router-key: " . $routerKey . ",x-mikrotik-token: " . $token);',
@@ -29526,3 +29526,4 @@ document.addEventListener(
 </body>
 
 </html>
+
