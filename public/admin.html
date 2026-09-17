@@ -21434,7 +21434,7 @@ function buildSingleMikrotikNetworkScript(eventData, router){
     ),
     "",
     "# HOTSPOT",
-    `:if ([:len [/ip hotspot profile find name="hsprof-wifi-pago"]] = 0) do={ /ip hotspot profile add name=hsprof-wifi-pago hotspot-address=${gateway} dns-name=${hotspotDnsName} html-directory=flash/hotspot login-by=${hotspotLoginBy} ${hotspotCertificateSetting} mac-auth-mode=mac-as-username-and-password } else={ /ip hotspot profile set [find name="hsprof-wifi-pago"] hotspot-address=${gateway} dns-name=${hotspotDnsName} html-directory=flash/hotspot login-by=${hotspotLoginBy} ${hotspotCertificateSetting} mac-auth-mode=mac-as-username-and-password }`,
+    `:if ([:len [/ip hotspot profile find name="hsprof-wifi-pago"]] = 0) do={ /ip hotspot profile add name=hsprof-wifi-pago hotspot-address=${gateway} dns-name="" html-directory=flash/hotspot login-by=${hotspotLoginBy} ssl-certificate=none mac-auth-mode=mac-as-username-and-password } else={ /ip hotspot profile set [find name="hsprof-wifi-pago"] hotspot-address=${gateway} dns-name="" html-directory=flash/hotspot login-by=${hotspotLoginBy} ssl-certificate=none mac-auth-mode=mac-as-username-and-password }`,
     ':if ([:len [/ip hotspot find name="hotspot-wifi-pago"]] = 0) do={ /ip hotspot add name=hotspot-wifi-pago interface=bridge-clientes address-pool=pool-wifi-pago profile=hsprof-wifi-pago disabled=no } else={ /ip hotspot set [find name="hotspot-wifi-pago"] interface=bridge-clientes address-pool=pool-wifi-pago profile=hsprof-wifi-pago disabled=no }',
     "",
     "# PERFIS DOS PLANOS"
