@@ -18227,6 +18227,27 @@ app.get(
   }
 );
 
+app.get("/api/ad-campaigns", (req, res) => {
+  try {
+    const eventKey = String(req.query.event_key || req.query.event || "").trim();
+    const now = new Date().toISOString();
+    const rows = db.prepare(`
+      SELECT a.id, a.name, a.image_path, a.target_url
+      FROM ad_campaigns a
+      LEFT JOIN events e ON e.id=a.event_id
+      WHERE a.active=1
+        AND (a.starts_at IS NULL OR a.starts_at='' OR a.starts_at<=?)
+        AND (a.ends_at IS NULL OR a.ends_at='' OR a.ends_at>=?)
+        AND (?='' OR e.event_key=? OR a.event_id IS NULL)
+      ORDER BY a.id DESC LIMIT 20
+    `).all(now, now, eventKey, eventKey);
+    return res.json({ ok: true, campaigns: rows });
+  } catch (error) {
+    console.error("Erro ao carregar anúncios públicos:", error.message);
+    return res.status(500).json({ ok: false, campaigns: [] });
+  }
+});
+
 app.delete(
   "/admin/api/audit",
   adminAuth,

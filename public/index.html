@@ -1513,6 +1513,10 @@ body:before{
 
 <body data-portal-version="wifi-total-v10.2-logo-premium">
 
+<div id="sponsoredBanner" style="display:none;margin:10px auto;max-width:720px;border-radius:14px;overflow:hidden;border:1px solid rgba(96,165,250,.35);background:#0b1729;">
+  <a id="sponsoredBannerLink" href="#" target="_blank" rel="noopener" style="display:block"><img id="sponsoredBannerImage" alt="Publicidade" style="display:block;width:100%;height:auto;max-height:180px;object-fit:cover"></a>
+</div>
+
 <div class="wrap">
 
   <header>
@@ -7223,6 +7227,25 @@ async function startPortal(){
 }
 
 
+async function loadSponsoredBanner(){
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const eventKey = params.get("event_key") || params.get("event") || "";
+    const response = await fetch(`/api/ad-campaigns?event_key=${encodeURIComponent(eventKey)}`, {cache:"no-store"});
+    const data = await response.json();
+    const campaign = (data.campaigns || [])[0];
+    if (!campaign) return;
+    const box = document.getElementById("sponsoredBanner");
+    const image = document.getElementById("sponsoredBannerImage");
+    const link = document.getElementById("sponsoredBannerLink");
+    image.src = campaign.image_path;
+    link.href = campaign.target_url || "#";
+    if (!campaign.target_url) link.removeAttribute("target");
+    box.style.display = "block";
+  } catch (error) { console.warn("Não foi possível carregar anúncio:", error.message); }
+}
+
+loadSponsoredBanner();
 startPortal();
 
 </script>
