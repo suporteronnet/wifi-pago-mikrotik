@@ -75,7 +75,7 @@ function adminAuth(req, res, next) {
     req.adminRole = session.role;
     return next();
   }
-  return adminBasicAuth(req, res, () => { req.adminUser = adminUser; req.adminRole = "admin"; next(); });
+  return res.status(401).json({ ok:false, error:"Sessão expirada. Faça login novamente." });
 }
 
 const rateLimitBuckets = new Map();

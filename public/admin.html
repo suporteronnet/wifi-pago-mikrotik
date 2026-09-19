@@ -5162,6 +5162,7 @@ document.addEventListener("DOMContentLoaded",loadPanelUsers);
 document.addEventListener("DOMContentLoaded", async () => {
   try {
     const response = await fetch("/admin/session", {cache:"no-store"});
+    if (!response.ok) { window.location.href = "/admin-login.html"; return; }
     const session = await response.json();
     if (session.role === "reseller") {
       document.querySelectorAll('.menu button[data-panel]').forEach(button => {
