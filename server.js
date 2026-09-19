@@ -785,6 +785,28 @@ CREATE TABLE IF NOT EXISTS orders (
 );
 `);
 
+// Campanhas de anúncios exibidas no portal Wi-Fi.
+// As imagens ficam no diretório de dados; a tabela guarda apenas metadados.
+db.exec(`
+CREATE TABLE IF NOT EXISTS ad_campaigns (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER,
+  name TEXT NOT NULL,
+  image_path TEXT NOT NULL,
+  target_url TEXT,
+  starts_at TEXT,
+  ends_at TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  impressions INTEGER NOT NULL DEFAULT 0,
+  clicks INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(event_id) REFERENCES events(id)
+);
+CREATE INDEX IF NOT EXISTS idx_ad_campaigns_event_active
+  ON ad_campaigns(event_id, active, starts_at, ends_at);
+`);
+
 // Vouchers sao emitidos em lotes por evento e consumidos uma unica vez.
 db.exec(`
 CREATE TABLE IF NOT EXISTS voucher_batches (
@@ -18218,6 +18240,75 @@ app.delete(
     }
   }
 );
+
+// ============================================================
+// CAMPANHAS DE ANÚNCIOS
+// ============================================================
+
+app.get("/admin/api/ad-campaigns", adminAuth, (req, res) => {
+  try {
+    const eventId = Number(req.query.event_id || 0);
+    const rows = db.prepare(`
+      SELECT a.*, e.name AS event_name
+      FROM ad_campaigns a
+      LEFT JOIN events e ON e.id=a.event_id
+      ${eventId > 0 ? "WHERE a.event_id=?" : ""}
+      ORDER BY a.id DESC
+    `).all(...(eventId > 0 ? [eventId] : []));
+    return res.json({ ok: true, campaigns: rows });
+  } catch (error) {
+    console.error("Erro ao carregar campanhas:", error.message);
+    return res.status(500).json({ ok: false, error: "Erro ao carregar campanhas" });
+  }
+});
+
+app.post("/admin/api/ad-campaigns", adminAuth, (req, res) => {
+  try {
+    const body = req.body || {};
+    const name = String(body.name || "").trim();
+    const imagePath = String(body.image_path || "").trim();
+    if (!name || !imagePath) return res.status(400).json({ ok: false, error: "Nome e imagem são obrigatórios" });
+    const now = new Date().toISOString();
+    const result = db.prepare(`INSERT INTO ad_campaigns (event_id,name,image_path,target_url,starts_at,ends_at,active,created_at,updated_at) VALUES (?,?,?,?,?,?,1,?,?)`).run(
+      Number(body.event_id) || null, name, imagePath, String(body.target_url || "").trim() || null,
+      String(body.starts_at || "").trim() || null, String(body.ends_at || "").trim() || null, now, now
+    );
+    return res.status(201).json({ ok: true, id: Number(result.lastInsertRowid) });
+  } catch (error) {
+    console.error("Erro ao criar campanha:", error.message);
+    return res.status(500).json({ ok: false, error: "Erro ao criar campanha" });
+  }
+});
+
+app.patch("/admin/api/ad-campaigns/:id", adminAuth, (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const body = req.body || {};
+    const fields = [];
+    const values = [];
+    for (const [column, value] of [["name",body.name],["image_path",body.image_path],["target_url",body.target_url],["starts_at",body.starts_at],["ends_at",body.ends_at]]) {
+      if (value !== undefined) { fields.push(`${column}=?`); values.push(String(value).trim() || null); }
+    }
+    if (body.active !== undefined) { fields.push("active=?"); values.push(body.active ? 1 : 0); }
+    if (!fields.length) return res.status(400).json({ ok: false, error: "Nenhuma alteração informada" });
+    fields.push("updated_at=?"); values.push(new Date().toISOString(), id);
+    const result = db.prepare(`UPDATE ad_campaigns SET ${fields.join(", ")} WHERE id=?`).run(...values);
+    return res.json({ ok: true, updated: Number(result.changes || 0) });
+  } catch (error) {
+    console.error("Erro ao atualizar campanha:", error.message);
+    return res.status(500).json({ ok: false, error: "Erro ao atualizar campanha" });
+  }
+});
+
+app.delete("/admin/api/ad-campaigns/:id", adminAuth, (req, res) => {
+  try {
+    const result = db.prepare("DELETE FROM ad_campaigns WHERE id=?").run(Number(req.params.id));
+    return res.json({ ok: true, deleted: Number(result.changes || 0) });
+  } catch (error) {
+    console.error("Erro ao excluir campanha:", error.message);
+    return res.status(500).json({ ok: false, error: "Erro ao excluir campanha" });
+  }
+});
 
 app.get(
   "/admin/api/orders",

@@ -2036,6 +2036,8 @@ button:focus-visible,
               📋 Logs
             </button>
 
+    <button type="button" data-panel="banners">📣 Banners</button>
+
   </div>
 
   <!-- =======================================================
@@ -5039,6 +5041,22 @@ button:focus-visible,
 
 </div>
 
+<div id="banners" class="panel">
+  <div class="section">
+    <div class="section-header"><h2>Campanhas de anúncios</h2></div>
+    <div class="section-body">
+      <div class="filters">
+        <input id="bannerName" placeholder="Nome da campanha">
+        <input id="bannerImage" placeholder="URL ou caminho da imagem">
+        <input id="bannerLink" placeholder="Link ao tocar (opcional)">
+        <button type="button" onclick="createBannerCampaign()">Adicionar campanha</button>
+      </div>
+      <div id="bannerMessage" class="form-message"></div>
+      <div id="bannerList" class="loading">Carregando campanhas...</div>
+    </div>
+  </div>
+</div>
+
 <!-- =========================================================
      FIM DO BLOCO 3/6
 ========================================================= -->
@@ -5053,6 +5071,40 @@ let eventsCache = [];
 
 let orders = [];
 let adminAudit = [];
+
+async function loadBannerCampaigns(){
+  const list = document.getElementById("bannerList");
+  if (!list) return;
+  try {
+    const response = await fetch("/admin/api/ad-campaigns", {cache:"no-store"});
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Falha ao carregar campanhas");
+    list.innerHTML = (data.campaigns || []).length ? data.campaigns.map(c => `
+      <div class="section" style="margin-top:10px;padding:12px;">
+        <strong>${escapeHtml(c.name)}</strong>
+        <div style="color:#94a3b8;font-size:12px;margin:5px 0;">${escapeHtml(c.image_path)}${c.target_url ? " • " + escapeHtml(c.target_url) : ""}</div>
+        <span class="badge ${c.active ? "badge-approved" : "badge-pending"}">${c.active ? "Ativa" : "Inativa"}</span>
+        <button type="button" onclick="toggleBannerCampaign(${Number(c.id)},${c.active ? "false" : "true"})">${c.active ? "Desativar" : "Ativar"}</button>
+        <button type="button" onclick="deleteBannerCampaign(${Number(c.id)})">Excluir</button>
+      </div>`).join("") : "<div class='loading'>Nenhuma campanha cadastrada.</div>";
+  } catch (error) { list.innerHTML = `<div class="form-message error" style="display:block">${escapeHtml(error.message)}</div>`; }
+}
+
+async function createBannerCampaign(){
+  const body = {name:document.getElementById("bannerName")?.value, image_path:document.getElementById("bannerImage")?.value, target_url:document.getElementById("bannerLink")?.value};
+  const message = document.getElementById("bannerMessage");
+  try {
+    const response = await fetch("/admin/api/ad-campaigns", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const data = await response.json(); if (!response.ok || !data.ok) throw new Error(data.error || "Falha ao criar campanha");
+    message.textContent = "Campanha criada."; message.className = "form-message success";
+    ["bannerName","bannerImage","bannerLink"].forEach(id => { const el=document.getElementById(id); if(el) el.value=""; }); loadBannerCampaigns();
+  } catch(error) { message.textContent = error.message; message.className = "form-message error"; }
+}
+
+async function toggleBannerCampaign(id, active){ await fetch(`/admin/api/ad-campaigns/${id}`, {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({active})}); loadBannerCampaigns(); }
+async function deleteBannerCampaign(id){ if(!confirm("Excluir esta campanha?")) return; await fetch(`/admin/api/ad-campaigns/${id}`, {method:"DELETE"}); loadBannerCampaigns(); }
+
+document.addEventListener("DOMContentLoaded", loadBannerCampaigns);
 let funnelLogs = [];
 let devices = [];
 let eventDevices = [];
