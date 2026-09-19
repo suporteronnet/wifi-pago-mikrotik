@@ -1,4 +1,4 @@
-// BLOCO 1/10 - BASE DO SISTEMA, BANCO, EVENTOS,
+﻿// BLOCO 1/10 - BASE DO SISTEMA, BANCO, EVENTOS,
 // MIKROTIKS E PLANOS
 // ============================================================
 
@@ -65,7 +65,7 @@ const adminBasicAuth = basicAuth({
   challenge: true
 });
 
-// Sessões administrativas: o Basic Auth continua aceito durante a migração.
+// SessÃµes administrativas: o Basic Auth continua aceito durante a migraÃ§Ã£o.
 const adminSessions = new Map();
 function adminAuth(req, res, next) {
   const token = String(req.headers.cookie || "").split(";").map(v => v.trim()).find(v => v.startsWith("wifi_admin_session="))?.split("=")[1];
@@ -75,7 +75,14 @@ function adminAuth(req, res, next) {
     req.adminRole = session.role;
     return next();
   }
-  return res.status(401).json({ ok:false, error:"Sessão expirada. Faça login novamente." });
+  return res.status(401).json({ ok:false, error:"SessÃ£o expirada. FaÃ§a login novamente." });
+}
+
+function requireRole(...allowed) {
+  return (req, res, next) => {
+    if (allowed.includes(req.adminRole || "admin")) return next();
+    return res.status(403).json({ ok:false, error:"Sem permissÃ£o para esta operaÃ§Ã£o" });
+  };
 }
 
 const rateLimitBuckets = new Map();
@@ -147,10 +154,10 @@ const limitRecoveryByClient = createRateLimiter({
 // O login.html passa a poder ser servido por 10.50.0.1 e chamar
 // as APIs HTTPS do Railway.
 //
-// Segurança:
+// SeguranÃ§a:
 // - libera somente a origem local do HotSpot atual;
-// - não libera o Admin por CORS;
-// - aceita apenas métodos necessários ao portal.
+// - nÃ£o libera o Admin por CORS;
+// - aceita apenas mÃ©todos necessÃ¡rios ao portal.
 // ============================================================
 
 const PORTAL_CORS_ORIGINS =
@@ -249,7 +256,7 @@ app.use(
 );
 
 // ============================================================
-// CONFIGURAÇÕES GERAIS
+// CONFIGURAÃ‡Ã•ES GERAIS
 // ============================================================
 
 const TEMP_MINUTES = 3;
@@ -347,9 +354,9 @@ db.exec(`
 // TABELA DE EVENTOS
 //
 // Cada evento possui:
-// - seus próprios planos
-// - uma única MikroTik ativa
-// - seus próprios pedidos
+// - seus prÃ³prios planos
+// - uma Ãºnica MikroTik ativa
+// - seus prÃ³prios pedidos
 // ============================================================
 
 db.exec(`
@@ -385,8 +392,8 @@ CREATE TABLE IF NOT EXISTS events (
 // Cada MikroTik pertence a um evento.
 // REGRA OPERACIONAL: somente uma MikroTik ativa por evento.
 //
-// A coluna role é mantida apenas por compatibilidade com o banco
-// existente, mas novas MikroTiks são sempre 'primary'.
+// A coluna role Ã© mantida apenas por compatibilidade com o banco
+// existente, mas novas MikroTiks sÃ£o sempre 'primary'.
 // ============================================================
 
 db.exec(`
@@ -460,7 +467,7 @@ CREATE TABLE IF NOT EXISTS routers (
 
 
 // ============================================================
-// MIGRAÇÕES DA TABELA ROUTERS - FAILOVER
+// MIGRAÃ‡Ã•ES DA TABELA ROUTERS - FAILOVER
 // ============================================================
 
 function ensureRouterColumn(
@@ -556,25 +563,25 @@ ensureRouterColumn(
 // ============================================================
 // TABELA DE PORTAS / INTERFACES DAS MIKROTIKS
 //
-// Cada porta física passa a ter uma função própria.
+// Cada porta fÃ­sica passa a ter uma funÃ§Ã£o prÃ³pria.
 //
-// Funções usadas:
+// FunÃ§Ãµes usadas:
 //
 // wan_primary
 //     Link principal de Internet.
 //
 // wan_secondary
-//     Link secundário para failover.
+//     Link secundÃ¡rio para failover.
 //
 // hotspot
-//     Saída para clientes / APs. Várias portas podem pertencer
-//     à mesma bridge de clientes.
+//     SaÃ­da para clientes / APs. VÃ¡rias portas podem pertencer
+//     Ã  mesma bridge de clientes.
 //
 // free
-//     Porta livre, sem configuração automática.
+//     Porta livre, sem configuraÃ§Ã£o automÃ¡tica.
 //
-// Valores antigos 'interlink' e 'uplink' são migrados para 'free'.
-// A tabela é separada de routers para não limitar o projeto
+// Valores antigos 'interlink' e 'uplink' sÃ£o migrados para 'free'.
+// A tabela Ã© separada de routers para nÃ£o limitar o projeto
 // a equipamentos de 5 portas.
 // ============================================================
 
@@ -618,14 +625,14 @@ CREATE TABLE IF NOT EXISTS router_ports (
 // TABELA DE LIBERACOES POR MIKROTIK
 //
 // O pagamento pertence ao EVENTO.
-// Esta tabela funciona como FILA/ESTADO da MikroTik única do evento.
+// Esta tabela funciona como FILA/ESTADO da MikroTik Ãºnica do evento.
 //
 // Estados principais:
-// pending  -> aguardando aplicação pela MikroTik
+// pending  -> aguardando aplicaÃ§Ã£o pela MikroTik
 // active   -> acesso aplicado
 // expired  -> acesso encerrado
 //
-// A tabela é mantida porque as rotas /pending, /ack e /expire-ack
+// A tabela Ã© mantida porque as rotas /pending, /ack e /expire-ack
 // usam estes registros para controlar ALLOW e EXPIRE.
 // ============================================================
 
@@ -682,7 +689,7 @@ CREATE TABLE IF NOT EXISTS router_access_grants (
 // ============================================================
 // TABELA DE PLANOS POR EVENTO
 //
-// Futuramente o portal buscará os planos diretamente desta
+// Futuramente o portal buscarÃ¡ os planos diretamente desta
 // tabela.
 //
 // Por enquanto o objeto PLANS continua existindo para manter
@@ -798,8 +805,8 @@ CREATE TABLE IF NOT EXISTS orders (
 );
 `);
 
-// Campanhas de anúncios exibidas no portal Wi-Fi.
-// As imagens ficam no diretório de dados; a tabela guarda apenas metadados.
+// Campanhas de anÃºncios exibidas no portal Wi-Fi.
+// As imagens ficam no diretÃ³rio de dados; a tabela guarda apenas metadados.
 db.exec(`
 CREATE TABLE IF NOT EXISTS ad_campaigns (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -820,7 +827,7 @@ CREATE INDEX IF NOT EXISTS idx_ad_campaigns_event_active
   ON ad_campaigns(event_id, active, starts_at, ends_at);
 `);
 
-// Revendedores e regras de comissão por evento.
+// Revendedores e regras de comissÃ£o por evento.
 db.exec(`
 CREATE TABLE IF NOT EXISTS resellers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -955,8 +962,8 @@ if(!db.prepare("PRAGMA table_info(voucher_batches)").all().some(column => column
 // ============================================================
 // DADOS CADASTRAIS DOS CLIENTES DO PORTAL
 //
-// O CLIENT_ID é a identidade principal do navegador.
-// Nome / telefone / e-mail pertencem ao cliente, não ao MAC.
+// O CLIENT_ID Ã© a identidade principal do navegador.
+// Nome / telefone / e-mail pertencem ao cliente, nÃ£o ao MAC.
 // Assim, se o celular trocar o MAC privado, os dados continuam
 // associados ao mesmo cliente.
 // ============================================================
@@ -1170,16 +1177,16 @@ console.log(
 // COMANDOS ADMINISTRATIVOS PARA A MIKROTIK
 //
 // BYPASS
-//     Liberação administrativa permanente.
+//     LiberaÃ§Ã£o administrativa permanente.
 //
 // UNBYPASS
-//     Remove somente a liberação administrativa.
+//     Remove somente a liberaÃ§Ã£o administrativa.
 //
 // BLOCK_NOW
 //     Bloqueio imediato.
 //
 // TEMP_ADMIN
-//     Liberação administrativa temporária.
+//     LiberaÃ§Ã£o administrativa temporÃ¡ria.
 //
 // Como existe somente uma MikroTik ativa por evento, estes
 // comandos continuam usando a fila administrativa atual.
@@ -1209,7 +1216,7 @@ CREATE TABLE IF NOT EXISTS admin_commands (
 
 
 // ============================================================
-// MIGRAÇÕES DA TABELA ORDERS
+// MIGRAÃ‡Ã•ES DA TABELA ORDERS
 // ============================================================
 
 function ensureColumn(
@@ -1315,7 +1322,7 @@ ensureColumn(
 
 
 // ============================================================
-// PRESENÇA DO PORTAL / PIX ABERTO
+// PRESENÃ‡A DO PORTAL / PIX ABERTO
 // ============================================================
 
 ensureColumn(
@@ -1345,7 +1352,7 @@ ensureColumn("voucher_serial", "INTEGER");
 
 
 // ============================================================
-// ÍNDICES
+// ÃNDICES
 // ============================================================
 
 db.exec(`
@@ -1423,8 +1430,8 @@ ON event_plans(active);
 //
 // Estes planos continuam exatamente como estavam.
 //
-// As rotas atuais ainda poderão usar PLANS normalmente.
-// Portanto não estamos alterando o funcionamento do portal
+// As rotas atuais ainda poderÃ£o usar PLANS normalmente.
+// Portanto nÃ£o estamos alterando o funcionamento do portal
 // ou do Mercado Pago nesta etapa.
 // ============================================================
 
@@ -1505,12 +1512,12 @@ const PLANS = {
 
 
 // ============================================================
-// CRIAR / LOCALIZAR EVENTO PADRÃO
+// CRIAR / LOCALIZAR EVENTO PADRÃƒO
 //
-// Este evento representa a instalação que já está funcionando
+// Este evento representa a instalaÃ§Ã£o que jÃ¡ estÃ¡ funcionando
 // atualmente.
 //
-// Ele só será criado se ainda não existir.
+// Ele sÃ³ serÃ¡ criado se ainda nÃ£o existir.
 // ============================================================
 
 function ensureDefaultEvent() {
@@ -1583,7 +1590,7 @@ function ensureDefaultEvent() {
 
       "",
 
-      "Instalação principal do sistema",
+      "InstalaÃ§Ã£o principal do sistema",
 
       "America/Sao_Paulo",
 
@@ -1616,7 +1623,7 @@ function ensureDefaultEvent() {
 
 
 // ============================================================
-// EVENTO PADRÃO
+// EVENTO PADRÃƒO
 // ============================================================
 
 const DEFAULT_EVENT =
@@ -1624,9 +1631,9 @@ const DEFAULT_EVENT =
 
 
 // ============================================================
-// CRIAR / LOCALIZAR MIKROTIK PADRÃO
+// CRIAR / LOCALIZAR MIKROTIK PADRÃƒO
 //
-// Representa a MikroTik única do evento padrão.
+// Representa a MikroTik Ãºnica do evento padrÃ£o.
 // ============================================================
 
 function ensureDefaultRouter() {
@@ -1740,7 +1747,7 @@ function ensureDefaultRouter() {
 
 
 // ============================================================
-// MIKROTIK PADRÃO
+// MIKROTIK PADRÃƒO
 // ============================================================
 
 const DEFAULT_ROUTER =
@@ -1748,11 +1755,11 @@ const DEFAULT_ROUTER =
 
 
 // ============================================================
-// TOPOLOGIA - DESCOBRIR QUANTIDADE PADRÃO DE PORTAS
+// TOPOLOGIA - DESCOBRIR QUANTIDADE PADRÃƒO DE PORTAS
 //
-// Nesta primeira versão reconhecemos os modelos mais comuns.
+// Nesta primeira versÃ£o reconhecemos os modelos mais comuns.
 // Modelos desconhecidos recebem 5 portas inicialmente e depois
-// poderão ser ajustados pela interface administrativa.
+// poderÃ£o ser ajustados pela interface administrativa.
 // ============================================================
 
 function routerDefaultPortCount(model) {
@@ -1800,15 +1807,15 @@ function routerDefaultPortCount(model) {
 // TOPOLOGIA - CRIAR PORTAS INICIAIS DE UMA MIKROTIK
 //
 // IMPORTANTE:
-// Não altera a configuração física da MikroTik.
+// NÃ£o altera a configuraÃ§Ã£o fÃ­sica da MikroTik.
 //
-// Apenas cria no banco a representação das interfaces para que
+// Apenas cria no banco a representaÃ§Ã£o das interfaces para que
 // o painel e o futuro gerador de script possam trabalhar.
 //
-// Para equipamentos já existentes:
+// Para equipamentos jÃ¡ existentes:
 //
-// - wan_interface vira função "wan"
-// - client_interface vira função "hotspot"
+// - wan_interface vira funÃ§Ã£o "wan"
+// - client_interface vira funÃ§Ã£o "hotspot"
 // - demais portas ficam "free"
 // ============================================================
 
@@ -1976,12 +1983,12 @@ function ensureRouterPorts(router) {
 
 
 // ============================================================
-// TOPOLOGIA - MIGRAR MIKROTIKS JÁ CADASTRADAS
+// TOPOLOGIA - MIGRAR MIKROTIKS JÃ CADASTRADAS
 //
-// Isso mantém compatibilidade com o banco atual.
+// Isso mantÃ©m compatibilidade com o banco atual.
 //
-// Nenhuma MikroTik existente é apagada ou recriada.
-// Apenas criamos os registros de portas que ainda não existem.
+// Nenhuma MikroTik existente Ã© apagada ou recriada.
+// Apenas criamos os registros de portas que ainda nÃ£o existem.
 // ============================================================
 
 function ensureExistingRouterPorts() {
@@ -2016,12 +2023,12 @@ ensureExistingRouterPorts();
 
 
 // ============================================================
-// MIGRAÇÃO - REMOVER FUNÇÕES ANTIGAS DE INTERLIGAÇÃO
+// MIGRAÃ‡ÃƒO - REMOVER FUNÃ‡Ã•ES ANTIGAS DE INTERLIGAÃ‡ÃƒO
 //
 // O projeto agora usa somente:
 // wan_primary / wan_secondary / hotspot / free
 //
-// Não apagamos portas nem MikroTiks. Apenas transformamos
+// NÃ£o apagamos portas nem MikroTiks. Apenas transformamos
 // interlink/uplink antigos em portas livres.
 // ============================================================
 
@@ -2063,13 +2070,13 @@ db.prepare(`
 // ============================================================
 // REGRA - UMA MIKROTIK ATIVA POR EVENTO
 //
-// Para bancos que já possuíam múltiplas MKs no mesmo evento,
+// Para bancos que jÃ¡ possuÃ­am mÃºltiplas MKs no mesmo evento,
 // preservamos UMA:
 // 1) primeiro role='primary'
 // 2) depois menor id
 //
 // As demais ficam status='inactive'.
-// Nada é apagado do banco.
+// Nada Ã© apagado do banco.
 // ============================================================
 
 function enforceSingleActiveRouterPerEvent() {
@@ -2166,9 +2173,9 @@ enforceSingleActiveRouterPerEvent();
 
 
 // ============================================================
-// COPIAR OS 4 PLANOS ATUAIS PARA O EVENTO PADRÃO
+// COPIAR OS 4 PLANOS ATUAIS PARA O EVENTO PADRÃƒO
 //
-// INSERT OR IGNORE impede duplicação após reiniciar/deployar
+// INSERT OR IGNORE impede duplicaÃ§Ã£o apÃ³s reiniciar/deployar
 // novamente.
 // ============================================================
 
@@ -2267,12 +2274,12 @@ ensureDefaultEventPlans();
 
 
 // ============================================================
-// ASSOCIAR PEDIDOS ANTIGOS AO EVENTO PADRÃO
+// ASSOCIAR PEDIDOS ANTIGOS AO EVENTO PADRÃƒO
 //
-// Não alteramos nenhum valor, pagamento ou referência.
+// NÃ£o alteramos nenhum valor, pagamento ou referÃªncia.
 //
 // Apenas preenchemos event_id e router_id nos registros que
-// ainda não possuem essas informações.
+// ainda nÃ£o possuem essas informaÃ§Ãµes.
 // ============================================================
 
 db.prepare(`
@@ -2304,12 +2311,12 @@ db.prepare(`
 // ============================================================
 // FILA MIKROTIK - CRIAR GRANTS PARA PEDIDOS EXISTENTES
 //
-// Esta migração NÃO altera o direito de acesso dos pedidos.
+// Esta migraÃ§Ã£o NÃƒO altera o direito de acesso dos pedidos.
 //
-// Para pedidos que já possuem router_id, criamos o registro
+// Para pedidos que jÃ¡ possuem router_id, criamos o registro
 // correspondente em router_access_grants.
 //
-// O status é inferido apenas para preservar o estado atual:
+// O status Ã© inferido apenas para preservar o estado atual:
 // - approved_pending_router => pending
 // - approved               => active
 // ============================================================
@@ -2455,11 +2462,11 @@ ensureExistingRouterAccessGrants();
 
 
 // ============================================================
-// CLIENTES ANTIGOS - APROVEITAR E-MAIL JÁ EXISTENTE
+// CLIENTES ANTIGOS - APROVEITAR E-MAIL JÃ EXISTENTE
 //
-// Pedidos antigos não possuem nome/telefone, então não inventamos.
-// Apenas criamos o cadastro pelo CLIENT_ID com o e-mail disponível.
-// Novos acessos completarão nome e telefone automaticamente.
+// Pedidos antigos nÃ£o possuem nome/telefone, entÃ£o nÃ£o inventamos.
+// Apenas criamos o cadastro pelo CLIENT_ID com o e-mail disponÃ­vel.
+// Novos acessos completarÃ£o nome e telefone automaticamente.
 // ============================================================
 
 try {
@@ -2553,7 +2560,7 @@ catch(error) {
 
 
 // ============================================================
-// LOG DE INICIALIZAÇÃO
+// LOG DE INICIALIZAÃ‡ÃƒO
 //
 // Estes logs confirmam no Railway que a estrutura principal
 // foi carregada corretamente.
@@ -2561,7 +2568,7 @@ catch(error) {
 
 console.log(
 
-  "EVENTO PADRÃO:",
+  "EVENTO PADRÃƒO:",
 
   DEFAULT_EVENT.id,
 
@@ -2572,7 +2579,7 @@ console.log(
 
 console.log(
 
-  "MIKROTIK PADRÃO:",
+  "MIKROTIK PADRÃƒO:",
 
   DEFAULT_ROUTER.id,
 
@@ -2602,7 +2609,7 @@ console.log(
     "SELECT COUNT(*) AS total FROM router_access_grants"
   ).get().total,
 
-  "liberações registradas"
+  "liberaÃ§Ãµes registradas"
 
 );
 
@@ -2611,7 +2618,7 @@ console.log(
 // FIM DO BLOCO 1/10
 
 
-// BLOCO 2/10 - FUNÇÕES AUXILIARES E AUTENTICAÇÃO
+// BLOCO 2/10 - FUNÃ‡Ã•ES AUXILIARES E AUTENTICAÃ‡ÃƒO
 // MULTI-MIKROTIK / ROAMING POR EVENTO
 // ============================================================
 
@@ -2656,7 +2663,7 @@ function addMinutesIso(
 
 
 // ============================================================
-// REFERÊNCIA ÚNICA DOS PEDIDOS
+// REFERÃŠNCIA ÃšNICA DOS PEDIDOS
 // ============================================================
 
 function randomRef() {
@@ -2675,7 +2682,7 @@ function randomRef() {
 
 
 // ============================================================
-// MODO TESTE / PRODUÇÃO
+// MODO TESTE / PRODUÃ‡ÃƒO
 // ============================================================
 
 function isTestMode() {
@@ -2838,7 +2845,7 @@ function normalizeIp(
 // identidades principais do cliente.
 //
 // IMPORTANTE:
-// O client_id sozinho não substitui MAC/IP em todas as etapas.
+// O client_id sozinho nÃ£o substitui MAC/IP em todas as etapas.
 // Ele serve como identidade persistente do navegador dentro do
 // evento para permitir continuidade de acesso entre MikroTiks.
 // ============================================================
@@ -2927,7 +2934,7 @@ function safeText(
 
 
 // ============================================================
-// COMPARAÇÃO DE VALORES MONETÁRIOS
+// COMPARAÃ‡ÃƒO DE VALORES MONETÃRIOS
 // ============================================================
 
 function sameMoney(
@@ -2970,9 +2977,9 @@ function sameMoney(
 
 
 // ============================================================
-// COMPARAÇÃO SEGURA DE SEGREDOS
+// COMPARAÃ‡ÃƒO SEGURA DE SEGREDOS
 //
-// Evita comparação simples de tokens.
+// Evita comparaÃ§Ã£o simples de tokens.
 //
 // Se os tamanhos forem diferentes, retorna false.
 // ============================================================
@@ -3023,20 +3030,20 @@ function safeSecretEqual(
 
 
 // ============================================================
-// IDENTIFICAÇÃO DA MIKROTIK NA REQUISIÇÃO
+// IDENTIFICAÃ‡ÃƒO DA MIKROTIK NA REQUISIÃ‡ÃƒO
 //
-// NOVO PADRÃO:
+// NOVO PADRÃƒO:
 //
 // x-router-key
 // x-mikrotik-token
 //
-// Também aceitamos para diagnóstico:
+// TambÃ©m aceitamos para diagnÃ³stico:
 //
 // ?router_key=...
 // ?token=...
 //
-// O router_key identifica QUAL MikroTik está falando.
-// O token confirma que aquela MikroTik é legítima.
+// O router_key identifica QUAL MikroTik estÃ¡ falando.
+// O token confirma que aquela MikroTik Ã© legÃ­tima.
 // ============================================================
 
 function getMikrotikRequestCredentials(
@@ -3146,7 +3153,7 @@ function findMikrotikByRouterKey(
 
 
 // ============================================================
-// AUTENTICAÇÃO INDIVIDUAL DA MIKROTIK
+// AUTENTICAÃ‡ÃƒO INDIVIDUAL DA MIKROTIK
 //
 // Retorna:
 //
@@ -3158,7 +3165,7 @@ function findMikrotikByRouterKey(
 //   router_id: 2
 // }
 //
-// ou, durante a transição:
+// ou, durante a transiÃ§Ã£o:
 //
 // {
 //   ok: true,
@@ -3239,10 +3246,10 @@ function authenticateMikrotik(
 
 
   // ==========================================================
-  // COMPATIBILIDADE TEMPORÁRIA
+  // COMPATIBILIDADE TEMPORÃRIA
   // TOKEN GLOBAL ANTIGO DO RAILWAY
   //
-  // Isso evita derrubar a instalação atual antes de gerarmos
+  // Isso evita derrubar a instalaÃ§Ã£o atual antes de gerarmos
   // o novo script da MikroTik.
   // ==========================================================
 
@@ -3309,11 +3316,11 @@ function authenticateMikrotik(
 // ============================================================
 // COMPATIBILIDADE COM AS ROTAS EXISTENTES
 //
-// Várias rotas atuais já chamam:
+// VÃ¡rias rotas atuais jÃ¡ chamam:
 //
 // isMikrotikAuthorized(req)
 //
-// Mantemos essa função para não quebrar os blocos antigos.
+// Mantemos essa funÃ§Ã£o para nÃ£o quebrar os blocos antigos.
 //
 // Depois, no BLOCO 6/10, passaremos a usar diretamente:
 //
@@ -3338,12 +3345,12 @@ function isMikrotikAuthorized(
 // ============================================================
 // OBTER A MIKROTIK AUTENTICADA
 //
-// Útil nas novas rotas multi-MikroTik.
+// Ãštil nas novas rotas multi-MikroTik.
 //
 // Retorna null quando:
-// - credenciais inválidas;
-// - requisição ainda está no modo legacy;
-// - router_key não corresponde a uma MK ativa.
+// - credenciais invÃ¡lidas;
+// - requisiÃ§Ã£o ainda estÃ¡ no modo legacy;
+// - router_key nÃ£o corresponde a uma MK ativa.
 // ============================================================
 
 function getAuthenticatedMikrotik(
@@ -3378,10 +3385,10 @@ function getAuthenticatedMikrotik(
 // ============================================================
 // OBTER EVENTO DA MIKROTIK AUTENTICADA
 //
-// Isso será usado no roaming.
+// Isso serÃ¡ usado no roaming.
 //
-// A MikroTik não escolhe o evento manualmente.
-// O evento vem do vínculo salvo no banco:
+// A MikroTik nÃ£o escolhe o evento manualmente.
+// O evento vem do vÃ­nculo salvo no banco:
 //
 // routers.event_id
 // ============================================================
@@ -3418,9 +3425,9 @@ function getAuthenticatedMikrotikEventId(
 
 
 // ============================================================
-// LOG AUXILIAR DE AUTENTICAÇÃO
+// LOG AUXILIAR DE AUTENTICAÃ‡ÃƒO
 //
-// Não imprime o token.
+// NÃ£o imprime o token.
 // ============================================================
 
 function logMikrotikAuthentication(
@@ -3488,9 +3495,9 @@ function logMikrotikAuthentication(
 
 
 // ============================================================
-// AUTENTICAÇÃO DO PAINEL ADMINISTRATIVO
+// AUTENTICAÃ‡ÃƒO DO PAINEL ADMINISTRATIVO
 //
-// Variáveis do Railway:
+// VariÃ¡veis do Railway:
 //
 // ADMIN_USER
 // ADMIN_PASSWORD
@@ -4094,8 +4101,8 @@ function processFunnelPresenceForRouter(
 // REGRAS ATUAIS:
 //
 // - Cortesia: TEMP_MINUTES
-// - Espera após cortesia: TEMP_RETRY_WAIT_MINUTES
-// - Máximo por hora: TEMP_MAX_ATTEMPTS_PER_HOUR
+// - Espera apÃ³s cortesia: TEMP_RETRY_WAIT_MINUTES
+// - MÃ¡ximo por hora: TEMP_MAX_ATTEMPTS_PER_HOUR
 //
 // ============================================================
 
@@ -4163,7 +4170,7 @@ function getTemporaryAccessDecision(
 
 
   // ==========================================================
-  // BUSCAR HISTÓRICO DO CLIENT_ID
+  // BUSCAR HISTÃ“RICO DO CLIENT_ID
   // ==========================================================
 
   const rows =
@@ -4202,18 +4209,18 @@ function getTemporaryAccessDecision(
   // ==========================================================
   // RECUPERAR CORTESIA PENDENTE TRAVADA
   //
-  // Uma solicitação "pending" existe apenas enquanto aguardamos
+  // Uma solicitaÃ§Ã£o "pending" existe apenas enquanto aguardamos
   // a MikroTik aplicar a cortesia.
   //
-  // Se por falha de comunicação / deploy / reinício ela ficar
-  // pendente por mais de 2 minutos, não pode bloquear o cliente
+  // Se por falha de comunicaÃ§Ã£o / deploy / reinÃ­cio ela ficar
+  // pendente por mais de 2 minutos, nÃ£o pode bloquear o cliente
   // indefinidamente.
   //
   // IMPORTANTE:
-  // - não conta como cortesia utilizada;
-  // - não altera o limite de 2 por hora;
-  // - não altera a espera de 5 minutos após cortesia concedida;
-  // - apenas limpa um estado técnico que ficou travado.
+  // - nÃ£o conta como cortesia utilizada;
+  // - nÃ£o altera o limite de 2 por hora;
+  // - nÃ£o altera a espera de 5 minutos apÃ³s cortesia concedida;
+  // - apenas limpa um estado tÃ©cnico que ficou travado.
   // ==========================================================
 
   const TEMP_PENDING_TIMEOUT_MS =
@@ -4288,7 +4295,7 @@ function getTemporaryAccessDecision(
 
 
   // ==========================================================
-  // VERIFICAR SE JÁ EXISTE UMA CORTESIA PENDENTE
+  // VERIFICAR SE JÃ EXISTE UMA CORTESIA PENDENTE
   // ==========================================================
 
   const pending =
@@ -4327,7 +4334,7 @@ function getTemporaryAccessDecision(
 
 
   // ==========================================================
-  // CONTAR TENTATIVAS NA ÚLTIMA HORA
+  // CONTAR TENTATIVAS NA ÃšLTIMA HORA
   // ==========================================================
 
   const attemptsLastHour =
@@ -4531,7 +4538,7 @@ function getTemporaryAccessDecision(
 
 
   // ==========================================================
-  // LOCALIZAR ÚLTIMA CORTESIA UTILIZADA
+  // LOCALIZAR ÃšLTIMA CORTESIA UTILIZADA
   // ==========================================================
 
   const previous =
@@ -4557,7 +4564,7 @@ function getTemporaryAccessDecision(
 
 
   // ==========================================================
-  // VERIFICAR TEMPO DE ESPERA APÓS A CORTESIA
+  // VERIFICAR TEMPO DE ESPERA APÃ“S A CORTESIA
   // ==========================================================
 
   if (
@@ -4582,7 +4589,7 @@ function getTemporaryAccessDecision(
     // COMPATIBILIDADE COM REGISTROS ANTIGOS
     //
     // Caso temp_expires_at esteja vazio,
-    // calcula o fim usando o horário inicial.
+    // calcula o fim usando o horÃ¡rio inicial.
     // ========================================================
 
     if (
@@ -4845,7 +4852,7 @@ app.get(
 // NOVO:
 // - Se receber event_key/router_key, retorna somente os planos
 //   cadastrados no evento.
-// - Se não receber contexto, mantém compatibilidade com os
+// - Se nÃ£o receber contexto, mantÃ©m compatibilidade com os
 //   planos antigos de PLANS.
 // ============================================================
 
@@ -4980,7 +4987,7 @@ app.get(
 
 
       // ========================================================
-      // COMPATIBILIDADE COM INSTALAÇÃO ANTIGA
+      // COMPATIBILIDADE COM INSTALAÃ‡ÃƒO ANTIGA
       //
       // Portais antigos que chamam apenas /api/plans continuam
       // recebendo os planos globais PLANS.
@@ -5165,7 +5172,7 @@ async function processOrderStatus(
   // ==========================================================
   // PRIMEIRO PAGAMENTO DA ORDER
   //
-  // Mantido para preservar a validação atual.
+  // Mantido para preservar a validaÃ§Ã£o atual.
   // ==========================================================
 
   const transaction =
@@ -5193,7 +5200,7 @@ async function processOrderStatus(
 
 
   // ==========================================================
-  // VALIDAR STATUS DA TRANSAÇÃO
+  // VALIDAR STATUS DA TRANSAÃ‡ÃƒO
   // ==========================================================
 
   const transactionCredited =
@@ -5254,7 +5261,7 @@ async function processOrderStatus(
 
 
   // ==========================================================
-  // DIAGNÓSTICO MERCADO PAGO
+  // DIAGNÃ“STICO MERCADO PAGO
   // ==========================================================
 
   console.log(
@@ -5420,12 +5427,12 @@ async function processOrderStatus(
 
 
   // ==========================================================
-  // LOG RESUMIDO DA VALIDAÇÃO
+  // LOG RESUMIDO DA VALIDAÃ‡ÃƒO
   // ==========================================================
 
   console.log(
 
-    "VALIDAÇÃO MP:",
+    "VALIDAÃ‡ÃƒO MP:",
 
     externalRef,
 
@@ -5506,7 +5513,7 @@ async function processOrderStatus(
 
 
   // ==========================================================
-  // PRODUÇÃO
+  // PRODUÃ‡ÃƒO
   // ==========================================================
 
   const reallyPaid =
@@ -5581,7 +5588,7 @@ async function processOrderStatus(
   // PAGAMENTO APROVADO
   //
   // Se existia cortesia do mesmo client_id,
-  // marca como substituída/cancelada pelo plano pago.
+  // marca como substituÃ­da/cancelada pelo plano pago.
   // ==========================================================
 
   if (
@@ -5617,7 +5624,7 @@ async function processOrderStatus(
 
 
   // ==========================================================
-  // AGUARDAR LIBERAÇÃO NA MIKROTIK
+  // AGUARDAR LIBERAÃ‡ÃƒO NA MIKROTIK
   // ==========================================================
 
   const approvedAt =
@@ -5734,13 +5741,13 @@ async function processOrderStatus(
 
 
 // ============================================================
-// POLLING AUTOMÁTICO DE SEGURANÇA DOS PIX PENDENTES
+// POLLING AUTOMÃTICO DE SEGURANÃ‡A DOS PIX PENDENTES
 //
 // O backend consulta sozinho o Mercado Pago.
-// Não depende do portal continuar aberto no celular.
+// NÃ£o depende do portal continuar aberto no celular.
 //
 // Intervalo: 5 segundos
-// Janela: pedidos dos últimos 10 minutos
+// Janela: pedidos dos Ãºltimos 10 minutos
 // ============================================================
 
 const MP_PENDING_POLL_INTERVAL_MS =
@@ -5751,7 +5758,7 @@ let mpPendingPollRunning =
 
 
 // ============================================================
-// BUSCAR PEDIDOS PIX RECENTES AINDA NÃO FINALIZADOS
+// BUSCAR PEDIDOS PIX RECENTES AINDA NÃƒO FINALIZADOS
 // ============================================================
 
 function getPendingMercadoPagoOrders() {
@@ -6282,7 +6289,7 @@ function setRecoveryCookie(
 
 
 
-// V12: DADOS DO CLIENTE + RECONEXÃO POR CLIENT_ID
+// V12: DADOS DO CLIENTE + RECONEXÃƒO POR CLIENT_ID
 // REGRA OPERACIONAL: 1 EVENTO = 1 MIKROTIK
 // ============================================================
 
@@ -6290,13 +6297,13 @@ function setRecoveryCookie(
 // ============================================================
 // PORTAL - RESOLVER EVENTO E MIKROTIK
 //
-// NOVO PADRÃO QUE O PORTAL PODERÁ ENVIAR:
+// NOVO PADRÃƒO QUE O PORTAL PODERÃ ENVIAR:
 //
 // event_key
 // router_key
 //
 // COMPATIBILIDADE:
-// Enquanto o portal atual ainda não envia esses campos,
+// Enquanto o portal atual ainda nÃ£o envia esses campos,
 // usamos automaticamente:
 // - DEFAULT_EVENT
 // - DEFAULT_ROUTER
@@ -6453,7 +6460,7 @@ function resolvePortalContext(
         false,
 
       error:
-        "Evento não encontrado",
+        "Evento nÃ£o encontrado",
 
       event:
         null,
@@ -6507,7 +6514,7 @@ function resolvePortalContext(
         false,
 
       error:
-        "Este evento não possui MikroTik ativa",
+        "Este evento nÃ£o possui MikroTik ativa",
 
       event,
 
@@ -6537,7 +6544,7 @@ function resolvePortalContext(
 // PORTAL - LOCALIZAR PLANO DO EVENTO
 //
 // Primeiro usamos event_plans.
-// No evento padrão, PLANS continua como fallback.
+// No evento padrÃ£o, PLANS continua como fallback.
 // ============================================================
 
 function resolveEventPlan(
@@ -6716,7 +6723,7 @@ function normalizeCustomerPhone(
         ""
       );
 
-  // Brasil: se vier somente DDD + número, prefixamos 55.
+  // Brasil: se vier somente DDD + nÃºmero, prefixamos 55.
   if(
     digits.length === 10
     ||
@@ -6841,13 +6848,13 @@ function upsertCustomerProfile({
 
 
 // ============================================================
-// PORTAL - LOCALIZAR ACESSO PAGO AINDA VÁLIDO
+// PORTAL - LOCALIZAR ACESSO PAGO AINDA VÃLIDO
 //
 // REGRA:
-// mesmo client_id + mesmo evento + plano ainda não vencido.
+// mesmo client_id + mesmo evento + plano ainda nÃ£o vencido.
 //
-// NÃO usamos router_id para definir o direito de acesso.
-// router_id apenas indica onde o cliente comprou / está entrando.
+// NÃƒO usamos router_id para definir o direito de acesso.
+// router_id apenas indica onde o cliente comprou / estÃ¡ entrando.
 // ============================================================
 
 function findActivePaidAccess(
@@ -6907,14 +6914,14 @@ function findActivePaidAccess(
 // ============================================================
 // V16.4 - RECUPERAR ACESSO PAGO POR TELEFONE + E-MAIL
 //
-// Usado quando o navegador cativo perdeu o client_id após uma
+// Usado quando o navegador cativo perdeu o client_id apÃ³s uma
 // troca de MAC privado.
 //
-// Segurança:
-// - exige telefone E e-mail válidos;
+// SeguranÃ§a:
+// - exige telefone E e-mail vÃ¡lidos;
 // - considera somente plano pago ainda ativo;
 // - restringe ao mesmo evento;
-// - não reinicia o relógio do plano.
+// - nÃ£o reinicia o relÃ³gio do plano.
 // ============================================================
 
 function findActivePaidAccessByContact(
@@ -7313,13 +7320,13 @@ function findActivePaidAccessByContact(
 // ============================================================
 // PORTAL - CRIAR / ATUALIZAR GRANT DA MIKROTIK DO EVENTO
 //
-// Se o cliente já possui plano válido no evento, garantimos que
-// exista um grant para a única MikroTik daquele evento.
+// Se o cliente jÃ¡ possui plano vÃ¡lido no evento, garantimos que
+// exista um grant para a Ãºnica MikroTik daquele evento.
 //
-// Se já existe grant ACTIVE, apenas atualizamos MAC/IP/last_seen.
+// Se jÃ¡ existe grant ACTIVE, apenas atualizamos MAC/IP/last_seen.
 //
 // Se havia grant EXPIRED/INVALID mas o plano global continua
-// válido, reabrimos como PENDING.
+// vÃ¡lido, reabrimos como PENDING.
 // ============================================================
 
 function ensureRouterGrant(
@@ -7455,13 +7462,13 @@ function ensureRouterGrant(
   ) {
 
     // ========================================================
-    // RECONEXÃO / MAC PRIVADO ALTERADO
+    // RECONEXÃƒO / MAC PRIVADO ALTERADO
     //
-    // O direito ao plano pertence ao CLIENT_ID, não ao MAC.
+    // O direito ao plano pertence ao CLIENT_ID, nÃ£o ao MAC.
     // Se o mesmo cliente voltar com outro MAC privado,
     // reabrimos apenas o grant da MikroTik como pending.
-    // access_expires_at NÃO é alterado, então só o tempo
-    // restante será aplicado.
+    // access_expires_at NÃƒO Ã© alterado, entÃ£o sÃ³ o tempo
+    // restante serÃ¡ aplicado.
     // ========================================================
 
     const previousMac =
@@ -8041,7 +8048,7 @@ app.post(
 //   router_key
 // }
 //
-// Se existir plano válido, garante o grant da MikroTik do evento.
+// Se existir plano vÃ¡lido, garante o grant da MikroTik do evento.
 // ============================================================
 
 app.post(
@@ -8110,7 +8117,7 @@ app.post(
               false,
 
             error:
-              "Identificador do cliente inválido"
+              "Identificador do cliente invÃ¡lido"
 
           });
 
@@ -8128,7 +8135,7 @@ app.post(
       // V16.17 - MIGRACAO AUTOMATICA DA IDENTIDADE ANTIGA
       //
       // Quando o DEVICE_ID persistente foi restaurado, o portal
-      // pode enviar também o client_id antigo que ainda estava
+      // pode enviar tambÃ©m o client_id antigo que ainda estava
       // salvo no navegador do dominio Railway.
       //
       // Se esse client_id antigo possui um plano pago ainda ativo
@@ -8537,7 +8544,7 @@ app.post(
 
 
 // ============================================================
-// V16.4 - RECUPERAR PLANO ATIVO APÓS TROCA DE MAC
+// V16.4 - RECUPERAR PLANO ATIVO APÃ“S TROCA DE MAC
 //
 // POST /api/access/recover
 //
@@ -8552,7 +8559,7 @@ app.post(
 //   router_key
 // }
 //
-// Se telefone + e-mail identificarem um plano ainda válido:
+// Se telefone + e-mail identificarem um plano ainda vÃ¡lido:
 // - migra o pedido ativo para o novo client_id;
 // - atualiza o grant para o novo client_id;
 // - envia o novo MAC/IP para ensureRouterGrant();
@@ -8623,7 +8630,7 @@ app.post(
           .status(400)
           .json({
             ok:false,
-            error:"Identificador do cliente inválido"
+            error:"Identificador do cliente invÃ¡lido"
           });
 
       }
@@ -8637,7 +8644,7 @@ app.post(
           .status(400)
           .json({
             ok:false,
-            error:"Informe um telefone válido com DDD"
+            error:"Informe um telefone vÃ¡lido com DDD"
           });
 
       }
@@ -8667,7 +8674,7 @@ app.post(
           .status(400)
           .json({
             ok:false,
-            error:"MAC ou IP atual inválido"
+            error:"MAC ou IP atual invÃ¡lido"
           });
 
       }
@@ -8939,7 +8946,7 @@ app.post(
           .json({
 
             error:
-              "Plano inválido para este evento"
+              "Plano invÃ¡lido para este evento"
 
           });
 
@@ -8988,7 +8995,7 @@ app.post(
           .json({
 
             error:
-              "MAC ou IP inválido"
+              "MAC ou IP invÃ¡lido"
 
           });
 
@@ -9006,7 +9013,7 @@ app.post(
           .json({
 
             error:
-              "Identificador do cliente inválido"
+              "Identificador do cliente invÃ¡lido"
 
           });
 
@@ -9059,7 +9066,7 @@ app.post(
           )
           .json({
             error:
-              "Informe um telefone válido com DDD"
+              "Informe um telefone vÃ¡lido com DDD"
           });
 
       }
@@ -9075,7 +9082,7 @@ app.post(
           )
           .json({
             error:
-              "Informe um e-mail válido"
+              "Informe um e-mail vÃ¡lido"
           });
 
       }
@@ -9165,13 +9172,13 @@ app.post(
       // ======================================================
       // ACESSO EXISTENTE:
       // ANTES DE CRIAR OUTRO PIX, VERIFICAR SE O CLIENTE
-      // JÁ POSSUI PLANO PAGO E VÁLIDO NESTE MESMO EVENTO.
+      // JÃ POSSUI PLANO PAGO E VÃLIDO NESTE MESMO EVENTO.
       //
       // IMPORTANTE:
-      // O plano ativo prevalece mesmo que o usuário tenha
+      // O plano ativo prevalece mesmo que o usuÃ¡rio tenha
       // clicado em outro plano na tela.
-      // Não criamos nova cobrança enquanto o acesso atual
-      // ainda estiver válido.
+      // NÃ£o criamos nova cobranÃ§a enquanto o acesso atual
+      // ainda estiver vÃ¡lido.
       // ======================================================
 
       const activeOrder =
@@ -9450,7 +9457,7 @@ app.post(
 
 
       // ======================================================
-      // REFERÊNCIAS DO NOVO PEDIDO
+      // REFERÃŠNCIAS DO NOVO PEDIDO
       // ======================================================
 
       const externalRef =
@@ -9506,7 +9513,7 @@ app.post(
 
 
       // ======================================================
-      // PRODUÇÃO
+      // PRODUÃ‡ÃƒO
       // ======================================================
 
       else {
@@ -9698,8 +9705,8 @@ app.post(
           // ====================================================
           // NOVO FLUXO
           //
-          // O PIX é criado primeiro e a cortesia fica aguardando.
-          // Ela só será solicitada quando o cliente tocar em
+          // O PIX Ã© criado primeiro e a cortesia fica aguardando.
+          // Ela sÃ³ serÃ¡ solicitada quando o cliente tocar em
           // "COPIAR PIX E LIBERAR INTERNET".
           // ====================================================
 
@@ -9742,7 +9749,7 @@ app.post(
       //
       // NOVO:
       // event_id = evento do portal
-      // router_id = MK onde a compra começou
+      // router_id = MK onde a compra comeÃ§ou
       // ======================================================
 
       const insertResult =
@@ -9915,7 +9922,7 @@ app.post(
       // Se houver cortesia pendente, ela continua sendo
       // processada pela MikroTik onde o pedido foi criado.
       //
-      // O grant pago será criado quando o Mercado Pago aprovar
+      // O grant pago serÃ¡ criado quando o Mercado Pago aprovar
       // ou pela compatibilidade da fila no BLOCO 6.
       // ======================================================
 
@@ -10144,11 +10151,11 @@ app.post(
 
 
 // ============================================================
-// ATIVAR CORTESIA APÓS COPIAR O PIX
+// ATIVAR CORTESIA APÃ“S COPIAR O PIX
 //
 // /api/pix cria o PIX sem iniciar a cortesia.
 // Ao tocar em "COPIAR PIX E LIBERAR INTERNET", o portal chama
-// este endpoint. Só então a cortesia vira "pending" e entra
+// este endpoint. SÃ³ entÃ£o a cortesia vira "pending" e entra
 // na fila da MikroTik.
 // ============================================================
 
@@ -10183,7 +10190,7 @@ app.post(
             ok:
               false,
             error:
-              "Pedido ou cliente inválido"
+              "Pedido ou cliente invÃ¡lido"
           });
 
       }
@@ -10218,14 +10225,14 @@ app.post(
             ok:
               false,
             error:
-              "Pedido não encontrado"
+              "Pedido nÃ£o encontrado"
           });
 
       }
 
 
       // ========================================================
-      // PAGAMENTO JÁ CONFIRMADO
+      // PAGAMENTO JÃ CONFIRMADO
       // ========================================================
 
       if (
@@ -10258,7 +10265,7 @@ app.post(
 
 
       // ========================================================
-      // CORTESIA JÁ PENDENTE
+      // CORTESIA JÃ PENDENTE
       // ========================================================
 
       if (
@@ -10285,11 +10292,11 @@ app.post(
 
 
       // ========================================================
-      // CORTESIA JÁ LIBERADA
+      // CORTESIA JÃ LIBERADA
       //
-      // Só considerar "granted" enquanto os 3 minutos
+      // SÃ³ considerar "granted" enquanto os 3 minutos
       // realmente ainda estiverem ativos.
-      // Se já expirou, continua abaixo e reavalia:
+      // Se jÃ¡ expirou, continua abaixo e reavalia:
       // - espera de 5 minutos
       // - limite de 2 cortesias por hora
       // ========================================================
@@ -10334,15 +10341,15 @@ app.post(
 
         }
 
-        // Cortesia antiga já terminou.
-        // Não retorna "granted": continua para reavaliar
+        // Cortesia antiga jÃ¡ terminou.
+        // NÃ£o retorna "granted": continua para reavaliar
         // a espera e o limite por hora.
 
       }
 
 
       // ========================================================
-      // NÃO REATIVAR SE O PLANO PAGO JÁ SUBSTITUIU A CORTESIA
+      // NÃƒO REATIVAR SE O PLANO PAGO JÃ SUBSTITUIU A CORTESIA
       // ========================================================
 
       if (
@@ -10359,7 +10366,7 @@ app.post(
             ok:
               false,
             error:
-              "A cortesia deste pedido não pode mais ser ativada"
+              "A cortesia deste pedido nÃ£o pode mais ser ativada"
           });
 
       }
@@ -10517,7 +10524,7 @@ app.post(
 
 
       console.log(
-        "CORTESIA SOLICITADA APÓS COPIAR PIX:",
+        "CORTESIA SOLICITADA APÃ“S COPIAR PIX:",
         externalRef,
         "CLIENT=" +
           normalizedClientId
@@ -10596,7 +10603,7 @@ app.post("/api/voucher/redeem", limitVoucherByIp, limitVoucherByClient, (req, re
     if(!context.ok) return res.status(400).json({ok:false, error:context.error});
 
     const code = normalizeVoucherCode(req.body?.code);
-    if(!/^\d{6}$/.test(code)) return res.status(400).json({ok:false, error:"Informe os seis números do voucher."});
+    if(!/^\d{6}$/.test(code)) return res.status(400).json({ok:false, error:"Informe os seis nÃºmeros do voucher."});
 
     const name = normalizeCustomerName(req.body?.customer_name);
     const phone = normalizeCustomerPhone(req.body?.customer_phone);
@@ -10605,7 +10612,7 @@ app.post("/api/voucher/redeem", limitVoucherByIp, limitVoucherByClient, (req, re
     const mac = normalizeMac(req.body?.mac);
     const ip = normalizeIp(req.body?.ip);
     if(!name || name.length < 2 || !phone || !email || !clientId || !mac || !ip){
-      return res.status(400).json({ok:false, error:"Confira seus dados e a conexão Wi-Fi antes de resgatar."});
+      return res.status(400).json({ok:false, error:"Confira seus dados e a conexÃ£o Wi-Fi antes de resgatar."});
     }
 
     const voucher = db.prepare(`
@@ -10614,7 +10621,7 @@ app.post("/api/voucher/redeem", limitVoucherByIp, limitVoucherByClient, (req, re
       WHERE v.code_hash=? AND v.event_id=? LIMIT 1
     `).get(crypto.createHash("sha256").update(code).digest("hex"), context.event.id);
     if(!voucher || voucher.status !== "unused" || Number(voucher.batch_active) !== 1){
-      return res.status(400).json({ok:false, error:"Voucher inválido, já utilizado ou desativado."});
+      return res.status(400).json({ok:false, error:"Voucher invÃ¡lido, jÃ¡ utilizado ou desativado."});
     }
 
     const now = nowIso();
@@ -10650,7 +10657,7 @@ app.post("/api/voucher/redeem", limitVoucherByIp, limitVoucherByClient, (req, re
   catch(error){
     if(error.message === "VOUCHER_ALREADY_USED") return res.status(400).json({ok:false,error:"Este voucher acabou de ser utilizado."});
     console.error("Falha no resgate de voucher:", error);
-    return res.status(500).json({ok:false,error:"Não foi possível ativar o voucher agora."});
+    return res.status(500).json({ok:false,error:"NÃ£o foi possÃ­vel ativar o voucher agora."});
   }
 });
 
@@ -10688,7 +10695,7 @@ app.get(
           .json({
 
             error:
-              "Pedido não encontrado"
+              "Pedido nÃ£o encontrado"
 
           });
 
@@ -10696,10 +10703,10 @@ app.get(
 
 
       // ======================================================
-      // PRESENÇA DO PORTAL / PIX ABERTO
+      // PRESENÃ‡A DO PORTAL / PIX ABERTO
       //
-      // O index.html já consulta esta rota continuamente
-      // enquanto o QR PIX está aberto.
+      // O index.html jÃ¡ consulta esta rota continuamente
+      // enquanto o QR PIX estÃ¡ aberto.
       // ======================================================
 
       const portalNow =
@@ -10753,7 +10760,7 @@ app.get(
 
 
       // ======================================================
-      // STATUS QUE NÃO PRECISAM MAIS CONSULTAR O MP
+      // STATUS QUE NÃƒO PRECISAM MAIS CONSULTAR O MP
       // ======================================================
 
       const stop =
@@ -10848,7 +10855,7 @@ app.get(
 
 
       // ======================================================
-      // INFORMAÇÃO DE ACESSO GERADA PELA MIKROTIK
+      // INFORMAÃ‡ÃƒO DE ACESSO GERADA PELA MIKROTIK
       // ======================================================
 
       let access =
@@ -10883,8 +10890,8 @@ app.get(
       // ======================================================
       // GRANTS POR MIKROTIK
       //
-      // Útil para o portal/painel saber em quais MKs o cliente
-      // já foi liberado.
+      // Ãštil para o portal/painel saber em quais MKs o cliente
+      // jÃ¡ foi liberado.
       // ======================================================
 
       const grants =
@@ -11093,13 +11100,13 @@ app.get(
 // COMANDOS:
 //
 // TEMP
-//   Cortesia automática.
+//   Cortesia automÃ¡tica.
 //
 // ALLOW
-//   Liberação de plano PIX pago.
+//   LiberaÃ§Ã£o de plano PIX pago.
 //
 // EXPIRE
-//   Encerramento automático por TEMPO CORRIDO.
+//   Encerramento automÃ¡tico por TEMPO CORRIDO.
 //
 // PRIORIDADE DA FILA:
 //
@@ -11297,7 +11304,7 @@ app.post(
       ) {
 
         console.warn(
-          "WEBHOOK MP: assinatura inválida"
+          "WEBHOOK MP: assinatura invÃ¡lida"
         );
 
         return;
@@ -11364,7 +11371,7 @@ app.post(
 //
 // COMPATIBILIDADE:
 // A MikroTik antiga continua podendo usar apenas o token global
-// durante a migração. Nesse caso usamos a MikroTik padrão.
+// durante a migraÃ§Ã£o. Nesse caso usamos a MikroTik padrÃ£o.
 //
 // FORMATOS:
 //
@@ -11380,7 +11387,7 @@ app.post(
 
 
 // ============================================================
-// RESOLVER A MIKROTIK ÚNICA DO EVENTO
+// RESOLVER A MIKROTIK ÃšNICA DO EVENTO
 // ============================================================
 
 function resolvePollingRouter(req) {
@@ -11442,8 +11449,8 @@ function resolvePollingRouter(req) {
   }
 
 
-  // Compatibilidade temporária com a instalação atual.
-  // O token global antigo é associado à MikroTik padrão.
+  // Compatibilidade temporÃ¡ria com a instalaÃ§Ã£o atual.
+  // O token global antigo Ã© associado Ã  MikroTik padrÃ£o.
   if(
     auth.mode === "legacy"
   ) {
@@ -11493,8 +11500,8 @@ function resolvePollingRouter(req) {
 // ============================================================
 // PERFIL DO PLANO
 //
-// Primeiro tenta o plano configurável do evento.
-// Se não existir, mantém compatibilidade com PLANS.
+// Primeiro tenta o plano configurÃ¡vel do evento.
+// Se nÃ£o existir, mantÃ©m compatibilidade com PLANS.
 // ============================================================
 
 
@@ -11673,7 +11680,7 @@ function getMikrotikPlanForOrder(order) {
 
 
 // ============================================================
-// GARANTIR GRANT PARA A MIKROTIK ÚNICA DO EVENTO
+// GARANTIR GRANT PARA A MIKROTIK ÃšNICA DO EVENTO
 // ============================================================
 
 function ensureInitialRouterGrant(
@@ -11769,13 +11776,13 @@ function ensureInitialRouterGrant(
 
 
 // ============================================================
-// MIKROTIK - RESSINCRONIZAR APÓS REBOOT
+// MIKROTIK - RESSINCRONIZAR APÃ“S REBOOT
 //
-// A MikroTik chama esta rota uma vez após iniciar.
-// Planos PIX ainda válidos voltam para a fila "pending".
+// A MikroTik chama esta rota uma vez apÃ³s iniciar.
+// Planos PIX ainda vÃ¡lidos voltam para a fila "pending".
 // O /pending recalcula o tempo restante usando access_expires_at.
-// Planos vencidos não são renovados e a expiração original
-// nunca é alterada.
+// Planos vencidos nÃ£o sÃ£o renovados e a expiraÃ§Ã£o original
+// nunca Ã© alterada.
 // ============================================================
 
 app.get(
@@ -11905,7 +11912,7 @@ app.get(
 
 
 // ============================================================
-// MIKROTIK - BUSCAR PRÓXIMO COMANDO
+// MIKROTIK - BUSCAR PRÃ“XIMO COMANDO
 // ============================================================
 
 app.get(
@@ -11998,7 +12005,7 @@ app.get(
     // PRIORIDADE 1 - EXPIRE
     //
     // A MikroTik do evento expira os acessos que ela aplicou.
-    // O pedido é encerrado após o grant da MikroTik do evento ser expirado.
+    // O pedido Ã© encerrado apÃ³s o grant da MikroTik do evento ser expirado.
     // ========================================================
 
     const expiredGrant =
@@ -12113,7 +12120,7 @@ app.get(
 
       console.error(
 
-        "EXPIRE sem dados válidos:",
+        "EXPIRE sem dados vÃ¡lidos:",
         expiredGrant.external_ref,
         "ROUTER=" + router.router_key
 
@@ -12125,7 +12132,7 @@ app.get(
     // ========================================================
     // PRIORIDADE 2 - ALLOW
     //
-    // Busca o grant pendente da MikroTik única deste evento.
+    // Busca o grant pendente da MikroTik Ãºnica deste evento.
     // ========================================================
 
     const paidGrant =
@@ -12231,7 +12238,7 @@ app.get(
 
         console.warn(
 
-          "ALLOW com dados inválidos:",
+          "ALLOW com dados invÃ¡lidos:",
           paidGrant.external_ref,
           "ROUTER=" + router.router_key
 
@@ -12242,8 +12249,8 @@ app.get(
 
       else {
 
-        // Se o plano já iniciou, enviamos somente o tempo restante.
-        // Nunca reiniciamos o relógio.
+        // Se o plano jÃ¡ iniciou, enviamos somente o tempo restante.
+        // Nunca reiniciamos o relÃ³gio.
         let minutesToSend =
           Number(
             paidGrant.minutes
@@ -12307,7 +12314,7 @@ app.get(
     // ========================================================
     // PRIORIDADE 3 - CORTESIA
     //
-    // A cortesia fica vinculada à MikroTik única do evento.
+    // A cortesia fica vinculada Ã  MikroTik Ãºnica do evento.
     // ========================================================
 
     const temporaryOrder =
@@ -12385,7 +12392,7 @@ app.get(
 
         console.warn(
 
-          "TEMP com dados inválidos:",
+          "TEMP com dados invÃ¡lidos:",
           temporaryOrder.external_ref,
           "ROUTER=" + router.router_key
 
@@ -12634,7 +12641,7 @@ app.get(
 
         console.error(
 
-          "MIKROTIK ACK: minutos inválidos:",
+          "MIKROTIK ACK: minutos invÃ¡lidos:",
           ref,
           order.minutes
 
@@ -12653,7 +12660,7 @@ app.get(
         order.access_expires_at;
 
 
-      // O relógio começa apenas no PRIMEIRO ACK.
+      // O relÃ³gio comeÃ§a apenas no PRIMEIRO ACK.
       if(
         !expiresAt
       ) {
@@ -12985,7 +12992,7 @@ app.get(
     }
 
 
-    // ACK repetido do mesmo grant é seguro.
+    // ACK repetido do mesmo grant Ã© seguro.
     if(
       grant
       &&
@@ -13027,8 +13034,8 @@ app.get(
 // ============================================================
 // MIKROTIK - CONFIRMAR EXPIRE
 //
-// A MikroTik única do evento confirma o próprio grant.
-// O pedido recebe access_expired_at após o encerramento desse acesso.
+// A MikroTik Ãºnica do evento confirma o prÃ³prio grant.
+// O pedido recebe access_expired_at apÃ³s o encerramento desse acesso.
 // ============================================================
 
 app.get(
@@ -13325,13 +13332,13 @@ app.get(
 // ============================================================
 // FIM DO BLOCO 6/10
 
-// BLOCO 7/10 - ADMINISTRAÇÃO DE DISPOSITIVOS
-// V13: DADOS DO CLIENTE + BANDA NA LIBERAÇÃO MANUAL
+// BLOCO 7/10 - ADMINISTRAÃ‡ÃƒO DE DISPOSITIVOS
+// V13: DADOS DO CLIENTE + BANDA NA LIBERAÃ‡ÃƒO MANUAL
 //
 // COMANDOS:
 //
 // BYPASS
-//   Liberação administrativa permanente.
+//   LiberaÃ§Ã£o administrativa permanente.
 //
 // UNBYPASS
 //   Remove somente o bypass administrativo.
@@ -13340,7 +13347,7 @@ app.get(
 //   Corta o dispositivo imediatamente.
 //
 // TEMP_ADMIN
-//   Liberação administrativa temporária.
+//   LiberaÃ§Ã£o administrativa temporÃ¡ria.
 //
 // A LISTA DE DISPOSITIVOS AGORA MOSTRA:
 //
@@ -13413,13 +13420,13 @@ ensureAdminCommandColumn(
 
 
 // ============================================================
-// LIMPEZA VISUAL DO HISTÓRICO DE ACESSOS
+// LIMPEZA VISUAL DO HISTÃ“RICO DE ACESSOS
 //
-// Não apagamos orders, pagamentos ou logs.
+// NÃ£o apagamos orders, pagamentos ou logs.
 // Apenas guardamos a partir de quando a tabela "Acessos e
-// histórico deste evento" deve começar a mostrar registros.
+// histÃ³rico deste evento" deve comeÃ§ar a mostrar registros.
 //
-// PIX ainda ativos são preservados mesmo sendo anteriores ao
+// PIX ainda ativos sÃ£o preservados mesmo sendo anteriores ao
 // corte.
 // ============================================================
 
@@ -13519,7 +13526,7 @@ function resolveAdminCommandTarget(eventIdValue){
     positiveId(eventIdValue);
 
   if(!eventId){
-    return {ok:false,status:400,error:"Evento inválido"};
+    return {ok:false,status:400,error:"Evento invÃ¡lido"};
   }
 
   const event =
@@ -13531,7 +13538,7 @@ function resolveAdminCommandTarget(eventIdValue){
     `).get(eventId);
 
   if(!event){
-    return {ok:false,status:404,error:"Evento não encontrado ou inativo"};
+    return {ok:false,status:404,error:"Evento nÃ£o encontrado ou inativo"};
   }
 
   const router =
@@ -13544,7 +13551,7 @@ function resolveAdminCommandTarget(eventIdValue){
     `).get(eventId);
 
   if(!router){
-    return {ok:false,status:409,error:"Este evento não possui MikroTik ativa"};
+    return {ok:false,status:409,error:"Este evento nÃ£o possui MikroTik ativa"};
   }
 
   return {
@@ -13601,7 +13608,7 @@ function createAdminCommand(
 
 
 // ============================================================
-// LIBERAÇÃO PERMANENTE
+// LIBERAÃ‡ÃƒO PERMANENTE
 // ============================================================
 
 app.post(
@@ -13663,7 +13670,7 @@ app.post(
               false,
 
             error:
-              "MAC inválido"
+              "MAC invÃ¡lido"
 
           });
 
@@ -13734,7 +13741,7 @@ app.post(
             false,
 
           error:
-            "Erro ao criar liberação"
+            "Erro ao criar liberaÃ§Ã£o"
 
         });
 
@@ -13745,7 +13752,7 @@ app.post(
 
 
 // ============================================================
-// LIBERAÇÃO MANUAL PERMANENTE COM CONTROLE DE BANDA
+// LIBERAÃ‡ÃƒO MANUAL PERMANENTE COM CONTROLE DE BANDA
 // ============================================================
 
 app.post(
@@ -13775,11 +13782,11 @@ app.post(
         normalizeAdminRateLimit(req.body?.rate_limit);
 
       if(!mac){
-        return res.status(400).json({ok:false,error:"MAC inválido"});
+        return res.status(400).json({ok:false,error:"MAC invÃ¡lido"});
       }
 
       if(!rateLimit){
-        return res.status(400).json({ok:false,error:"Banda inválida"});
+        return res.status(400).json({ok:false,error:"Banda invÃ¡lida"});
       }
 
       const commandRef =
@@ -13808,7 +13815,7 @@ app.post(
     }
     catch(error){
       console.error("Erro MANUAL_ADMIN:",error);
-      return res.status(500).json({ok:false,error:"Erro ao criar liberação manual"});
+      return res.status(500).json({ok:false,error:"Erro ao criar liberaÃ§Ã£o manual"});
     }
 
   }
@@ -13816,7 +13823,7 @@ app.post(
 
 
 // ============================================================
-// LIBERAÇÃO TEMPORÁRIA
+// LIBERAÃ‡ÃƒO TEMPORÃRIA
 // ============================================================
 
 app.post(
@@ -13854,7 +13861,7 @@ app.post(
 
           ||
 
-          "Dispositivo temporário"
+          "Dispositivo temporÃ¡rio"
 
         )
           .trim()
@@ -13890,7 +13897,7 @@ app.post(
               false,
 
             error:
-              "MAC inválido"
+              "MAC invÃ¡lido"
 
           });
 
@@ -13913,7 +13920,7 @@ app.post(
               false,
 
             error:
-              "Tempo de liberação inválido"
+              "Tempo de liberaÃ§Ã£o invÃ¡lido"
 
           });
 
@@ -13921,7 +13928,7 @@ app.post(
 
 
       if(!rateLimit){
-        return res.status(400).json({ok:false,error:"Banda inválida"});
+        return res.status(400).json({ok:false,error:"Banda invÃ¡lida"});
       }
 
 
@@ -13998,7 +14005,7 @@ app.post(
             false,
 
           error:
-            "Erro ao criar liberação temporária"
+            "Erro ao criar liberaÃ§Ã£o temporÃ¡ria"
 
         });
 
@@ -14009,7 +14016,7 @@ app.post(
 
 
 // ============================================================
-// REMOVER LIBERAÇÃO ADMINISTRATIVA
+// REMOVER LIBERAÃ‡ÃƒO ADMINISTRATIVA
 // ============================================================
 
 app.post(
@@ -14071,7 +14078,7 @@ app.post(
               false,
 
             error:
-              "MAC inválido"
+              "MAC invÃ¡lido"
 
           });
 
@@ -14142,7 +14149,7 @@ app.post(
             false,
 
           error:
-            "Erro ao solicitar remoção"
+            "Erro ao solicitar remoÃ§Ã£o"
 
         });
 
@@ -14215,7 +14222,7 @@ app.post(
               false,
 
             error:
-              "MAC inválido"
+              "MAC invÃ¡lido"
 
           });
 
@@ -14297,13 +14304,13 @@ app.post(
 
 
 // ============================================================
-// LIMPAR HISTÓRICO VISUAL DA TABELA DE ACESSOS
+// LIMPAR HISTÃ“RICO VISUAL DA TABELA DE ACESSOS
 //
 // Regra:
-// - não apaga pagamentos;
-// - não apaga Logs;
-// - não altera MikroTik;
-// - não remove plano PIX ativo;
+// - nÃ£o apaga pagamentos;
+// - nÃ£o apaga Logs;
+// - nÃ£o altera MikroTik;
+// - nÃ£o remove plano PIX ativo;
 // - somente define um novo ponto inicial para a tabela.
 // ============================================================
 
@@ -14328,7 +14335,7 @@ app.post(
           .status(400)
           .json({
             ok:false,
-            error:"Evento inválido"
+            error:"Evento invÃ¡lido"
           });
 
       }
@@ -14358,7 +14365,7 @@ app.post(
           .status(404)
           .json({
             ok:false,
-            error:"Evento não encontrado"
+            error:"Evento nÃ£o encontrado"
           });
 
       }
@@ -14413,7 +14420,7 @@ app.post(
 
 
       console.log(
-        "HISTÓRICO DE ACESSOS LIMPO:",
+        "HISTÃ“RICO DE ACESSOS LIMPO:",
         "EVENTO=" + eventId,
         "CORTE=" + clearedAt,
         "PIX_ATIVOS=" +
@@ -14438,7 +14445,7 @@ app.post(
     catch(error){
 
       console.error(
-        "Erro ao limpar histórico de acessos:",
+        "Erro ao limpar histÃ³rico de acessos:",
         error
       );
 
@@ -14447,7 +14454,7 @@ app.post(
         .status(500)
         .json({
           ok:false,
-          error:"Erro ao limpar histórico de acessos"
+          error:"Erro ao limpar histÃ³rico de acessos"
         });
 
     }
@@ -14457,12 +14464,12 @@ app.post(
 
 
 // ============================================================
-// RESTAURAR HISTÓRICO VISUAL DA TABELA DE ACESSOS
+// RESTAURAR HISTÃ“RICO VISUAL DA TABELA DE ACESSOS
 //
 // Remove somente o ponto de corte criado por
-// "Limpar histórico da tabela".
+// "Limpar histÃ³rico da tabela".
 //
-// NÃO apaga ou recria:
+// NÃƒO apaga ou recria:
 // - orders / pagamentos;
 // - clientes;
 // - logs;
@@ -14491,7 +14498,7 @@ app.post(
           .status(400)
           .json({
             ok:false,
-            error:"Evento inválido"
+            error:"Evento invÃ¡lido"
           });
       }
 
@@ -14520,7 +14527,7 @@ app.post(
           .status(404)
           .json({
             ok:false,
-            error:"Evento não encontrado"
+            error:"Evento nÃ£o encontrado"
           });
       }
 
@@ -14538,7 +14545,7 @@ app.post(
 
 
       console.log(
-        "HISTÓRICO DE ACESSOS RESTAURADO:",
+        "HISTÃ“RICO DE ACESSOS RESTAURADO:",
         "EVENTO=" + eventId,
         "REGISTROS_DE_CORTE_REMOVIDOS=" +
           Number(
@@ -14561,7 +14568,7 @@ app.post(
     catch(error){
 
       console.error(
-        "Erro ao restaurar histórico de acessos:",
+        "Erro ao restaurar histÃ³rico de acessos:",
         error
       );
 
@@ -14570,7 +14577,7 @@ app.post(
         .status(500)
         .json({
           ok:false,
-          error:"Erro ao restaurar histórico de acessos"
+          error:"Erro ao restaurar histÃ³rico de acessos"
         });
     }
 
@@ -14604,7 +14611,7 @@ app.get(
         return res
           .status(400)
           .json({
-            error:"Evento inválido"
+            error:"Evento invÃ¡lido"
           });
       }
 
@@ -14687,9 +14694,9 @@ app.get(
         );
 
 
-      // UNBYPASS / BLOCK_NOW são comandos de transição.
-      // Quando eles pertencem a uma liberação administrativa
-      // anterior, serão incorporados ao próprio card original.
+      // UNBYPASS / BLOCK_NOW sÃ£o comandos de transiÃ§Ã£o.
+      // Quando eles pertencem a uma liberaÃ§Ã£o administrativa
+      // anterior, serÃ£o incorporados ao prÃ³prio card original.
       const absorbedAdminActionRefs =
         new Set();
 
@@ -15122,7 +15129,7 @@ app.get(
       //
       // Consideramos pedidos que chegaram a ser aprovados.
       //
-      // Cada compra é um registro independente.
+      // Cada compra Ã© um registro independente.
       // ======================================================
 
       const pixRows =
@@ -15197,8 +15204,8 @@ app.get(
         );
 
 
-      // BLOCK_NOW aplicado sobre um PIX será incorporado ao
-      // próprio registro PIX. Assim não mostramos dois cards para
+      // BLOCK_NOW aplicado sobre um PIX serÃ¡ incorporado ao
+      // prÃ³prio registro PIX. Assim nÃ£o mostramos dois cards para
       // o mesmo acesso.
       const absorbedBlockRefs =
         new Set();
@@ -15243,10 +15250,10 @@ app.get(
             // =================================================
             // BLOQUEIO MANUAL APLICADO DEPOIS DESTE PIX
             //
-            // adminRows está em ordem decrescente, então find()
-            // retorna o bloqueio mais recente compatível.
-            // Um bloqueio antigo não afeta uma compra nova porque
-            // exigimos applied_at >= horário de liberação do PIX.
+            // adminRows estÃ¡ em ordem decrescente, entÃ£o find()
+            // retorna o bloqueio mais recente compatÃ­vel.
+            // Um bloqueio antigo nÃ£o afeta uma compra nova porque
+            // exigimos applied_at >= horÃ¡rio de liberaÃ§Ã£o do PIX.
             // =================================================
 
             const confirmedAtMs =
@@ -15401,7 +15408,7 @@ app.get(
               catch(error){
 
                 console.warn(
-                  "ADMIN: access_json inválido:",
+                  "ADMIN: access_json invÃ¡lido:",
                   row.external_ref
                 );
 
@@ -15505,7 +15512,7 @@ app.get(
 
 
             // =================================================
-            // FORMATO COMPATÍVEL COM A TELA ATUAL
+            // FORMATO COMPATÃVEL COM A TELA ATUAL
             // =================================================
 
             return {
@@ -15678,10 +15685,10 @@ app.get(
       //
       // Sempre preservamos:
       // - PIX aprovado ainda dentro do prazo;
-      // - PIX já pago aguardando aplicação na MikroTik.
+      // - PIX jÃ¡ pago aguardando aplicaÃ§Ã£o na MikroTik.
       //
-      // Demais registros só aparecem se forem posteriores ao
-      // último "Limpar histórico da tabela".
+      // Demais registros sÃ³ aparecem se forem posteriores ao
+      // Ãºltimo "Limpar histÃ³rico da tabela".
       // ======================================================
 
       const visibleResult =
@@ -15826,12 +15833,12 @@ app.get(
 // EXPIRAR TEMP_ADMIN POR TEMPO CORRIDO
 //
 // Regra:
-// - TEMP_ADMIN começa a contar quando recebe ACK (applied_at).
+// - TEMP_ADMIN comeÃ§a a contar quando recebe ACK (applied_at).
 // - Quando applied_at + minutes vence, o backend cria um
-//   UNBYPASS automático para a MESMA MikroTik.
+//   UNBYPASS automÃ¡tico para a MESMA MikroTik.
 // - A MikroTik recebe esse UNBYPASS no ADMIN-PULL e remove o
 //   ip-binding administrativo.
-// - O EXISTS impede criar mais de um corte automático para o
+// - O EXISTS impede criar mais de um corte automÃ¡tico para o
 //   mesmo TEMP_ADMIN.
 // ============================================================
 
@@ -15932,7 +15939,7 @@ function enqueueExpiredAdminTemporaryAccess(
       (
         row.device_name
         ||
-        "Liberação temporária"
+        "LiberaÃ§Ã£o temporÃ¡ria"
       ),
       eventId,
       routerId,
@@ -15981,8 +15988,8 @@ app.get(
       polling.router;
 
 
-    // Antes de entregar o próximo comando, verifica se existe
-    // TEMP_ADMIN vencido e enfileira o UNBYPASS automático.
+    // Antes de entregar o prÃ³ximo comando, verifica se existe
+    // TEMP_ADMIN vencido e enfileira o UNBYPASS automÃ¡tico.
     enqueueExpiredAdminTemporaryAccess(
       router.event_id,
       router.id
@@ -16158,12 +16165,12 @@ app.get(
 
 
     // ========================================================
-    // BLOCK_NOW TAMBÉM ENCERRA O DIREITO DE ACESSO PIX
+    // BLOCK_NOW TAMBÃ‰M ENCERRA O DIREITO DE ACESSO PIX
     //
-    // A MikroTik já cortou a navegação. Aqui sincronizamos o
+    // A MikroTik jÃ¡ cortou a navegaÃ§Ã£o. Aqui sincronizamos o
     // backend para que:
-    // - o PIX não continue aparecendo como ativo;
-    // - o portal não reutilize o plano bloqueado;
+    // - o PIX nÃ£o continue aparecendo como ativo;
+    // - o portal nÃ£o reutilize o plano bloqueado;
     // - o grant da MikroTik fique encerrado.
     // ========================================================
 
@@ -16331,7 +16338,7 @@ app.get(
           )
           .json({
             ok:false,
-            error:"CLIENT_ID inválido"
+            error:"CLIENT_ID invÃ¡lido"
           });
 
       }
@@ -18215,7 +18222,7 @@ app.get(
         .json({
 
           error:
-            "client_id inválido"
+            "client_id invÃ¡lido"
 
         });
 
@@ -18339,7 +18346,7 @@ app.post("/admin/login", (req, res) => {
         if (stored && crypto.timingSafeEqual(Buffer.from(stored, "hex"), Buffer.from(derived, "hex"))) role = user.role;
       }
     }
-    if (!role) return res.status(401).json({ ok:false, error:"Usuário ou senha inválidos" });
+    if (!role) return res.status(401).json({ ok:false, error:"UsuÃ¡rio ou senha invÃ¡lidos" });
     const token = crypto.randomBytes(32).toString("hex");
     adminSessions.set(token, { username, role, expiresAt: Date.now() + 8 * 60 * 60 * 1000 });
     res.setHeader("Set-Cookie", `wifi_admin_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
@@ -18366,7 +18373,7 @@ app.get("/api/ad-campaigns", (req, res) => {
     `).all(now, now, eventKey, eventKey);
     return res.json({ ok: true, campaigns: rows });
   } catch (error) {
-    console.error("Erro ao carregar anúncios públicos:", error.message);
+    console.error("Erro ao carregar anÃºncios pÃºblicos:", error.message);
     return res.status(500).json({ ok: false, campaigns: [] });
   }
 });
@@ -18397,7 +18404,7 @@ app.delete(
 );
 
 // ============================================================
-// CAMPANHAS DE ANÚNCIOS
+// CAMPANHAS DE ANÃšNCIOS
 // ============================================================
 
 app.get("/admin/api/ad-campaigns", adminAuth, (req, res) => {
@@ -18422,7 +18429,7 @@ app.post("/admin/api/ad-campaigns", adminAuth, (req, res) => {
     const body = req.body || {};
     const name = String(body.name || "").trim();
     const imagePath = String(body.image_path || "").trim();
-    if (!name || !imagePath) return res.status(400).json({ ok: false, error: "Nome e imagem são obrigatórios" });
+    if (!name || !imagePath) return res.status(400).json({ ok: false, error: "Nome e imagem sÃ£o obrigatÃ³rios" });
     const now = new Date().toISOString();
     const result = db.prepare(`INSERT INTO ad_campaigns (event_id,name,image_path,target_url,starts_at,ends_at,active,created_at,updated_at) VALUES (?,?,?,?,?,?,1,?,?)`).run(
       Number(body.event_id) || null, name, imagePath, String(body.target_url || "").trim() || null,
@@ -18445,7 +18452,7 @@ app.patch("/admin/api/ad-campaigns/:id", adminAuth, (req, res) => {
       if (value !== undefined) { fields.push(`${column}=?`); values.push(String(value).trim() || null); }
     }
     if (body.active !== undefined) { fields.push("active=?"); values.push(body.active ? 1 : 0); }
-    if (!fields.length) return res.status(400).json({ ok: false, error: "Nenhuma alteração informada" });
+    if (!fields.length) return res.status(400).json({ ok: false, error: "Nenhuma alteraÃ§Ã£o informada" });
     fields.push("updated_at=?"); values.push(new Date().toISOString(), id);
     const result = db.prepare(`UPDATE ad_campaigns SET ${fields.join(", ")} WHERE id=?`).run(...values);
     return res.json({ ok: true, updated: Number(result.changes || 0) });
@@ -18465,47 +18472,47 @@ app.delete("/admin/api/ad-campaigns/:id", adminAuth, (req, res) => {
   }
 });
 
-app.get("/admin/api/resellers", adminAuth, (req, res) => {
+app.get("/admin/api/resellers", adminAuth, requireRole("admin","provider"), (req, res) => {
   try {
     const rows = db.prepare(`SELECT r.*, e.name AS event_name FROM resellers r LEFT JOIN events e ON e.id=r.event_id ORDER BY r.id DESC`).all();
     return res.json({ ok:true, resellers:rows });
   } catch (error) { return res.status(500).json({ok:false,error:"Erro ao carregar revendedores"}); }
 });
 
-app.post("/admin/api/resellers", adminAuth, (req, res) => {
+app.post("/admin/api/resellers", adminAuth, requireRole("admin","provider"), (req, res) => {
   try {
     const body=req.body||{}; const name=String(body.name||"").trim();
-    if(!name) return res.status(400).json({ok:false,error:"Nome é obrigatório"});
+    if(!name) return res.status(400).json({ok:false,error:"Nome Ã© obrigatÃ³rio"});
     const now=new Date().toISOString();
     const result=db.prepare(`INSERT INTO resellers (event_id,name,phone,email,commission_percent,created_at,updated_at) VALUES (?,?,?,?,?,?,?)`).run(Number(body.event_id)||null,name,String(body.phone||"").trim()||null,String(body.email||"").trim()||null,Math.max(0,Number(body.commission_percent)||0),now,now);
     return res.status(201).json({ok:true,id:Number(result.lastInsertRowid)});
   } catch(error){ return res.status(500).json({ok:false,error:"Erro ao criar revendedor"}); }
 });
 
-app.patch("/admin/api/resellers/:id", adminAuth, (req,res)=>{
-  try { const b=req.body||{}, fields=[], vals=[]; for(const [c,v] of [["name",b.name],["phone",b.phone],["email",b.email],["event_id",b.event_id],["commission_percent",b.commission_percent]]) if(v!==undefined){fields.push(`${c}=?`);vals.push(c==="commission_percent"?Math.max(0,Number(v)||0):c==="event_id"?(Number(v)||null):String(v).trim()||null);} if(b.active!==undefined){fields.push("active=?");vals.push(b.active?1:0);} if(!fields.length)return res.status(400).json({ok:false,error:"Nenhuma alteração informada"}); fields.push("updated_at=?");vals.push(new Date().toISOString(),Number(req.params.id)); const result=db.prepare(`UPDATE resellers SET ${fields.join(",")} WHERE id=?`).run(...vals); return res.json({ok:true,updated:Number(result.changes||0)}); } catch(error){return res.status(500).json({ok:false,error:"Erro ao atualizar revendedor"});}
+app.patch("/admin/api/resellers/:id", adminAuth, requireRole("admin","provider"), (req,res)=>{
+  try { const b=req.body||{}, fields=[], vals=[]; for(const [c,v] of [["name",b.name],["phone",b.phone],["email",b.email],["event_id",b.event_id],["commission_percent",b.commission_percent]]) if(v!==undefined){fields.push(`${c}=?`);vals.push(c==="commission_percent"?Math.max(0,Number(v)||0):c==="event_id"?(Number(v)||null):String(v).trim()||null);} if(b.active!==undefined){fields.push("active=?");vals.push(b.active?1:0);} if(!fields.length)return res.status(400).json({ok:false,error:"Nenhuma alteraÃ§Ã£o informada"}); fields.push("updated_at=?");vals.push(new Date().toISOString(),Number(req.params.id)); const result=db.prepare(`UPDATE resellers SET ${fields.join(",")} WHERE id=?`).run(...vals); return res.json({ok:true,updated:Number(result.changes||0)}); } catch(error){return res.status(500).json({ok:false,error:"Erro ao atualizar revendedor"});}
 });
 
-app.delete("/admin/api/resellers/:id", adminAuth, (req,res)=>{ try { const result=db.prepare("DELETE FROM resellers WHERE id=?").run(Number(req.params.id)); return res.json({ok:true,deleted:Number(result.changes||0)}); } catch(error){return res.status(500).json({ok:false,error:"Erro ao excluir revendedor"});} });
+app.delete("/admin/api/resellers/:id", adminAuth, requireRole("admin","provider"), (req,res)=>{ try { const result=db.prepare("DELETE FROM resellers WHERE id=?").run(Number(req.params.id)); return res.json({ok:true,deleted:Number(result.changes||0)}); } catch(error){return res.status(500).json({ok:false,error:"Erro ao excluir revendedor"});} });
 
-app.get("/admin/api/resellers/report", adminAuth, (req,res)=>{
+app.get("/admin/api/resellers/report", adminAuth, requireRole("admin","provider"), (req,res)=>{
   try {
     const rows=db.prepare(`SELECT r.id,r.name,r.commission_percent,COUNT(o.id) AS sales,COALESCE(SUM(o.amount),0) AS gross,COALESCE(SUM(COALESCE(o.commission_amount, o.amount*r.commission_percent/100.0)),0) AS commission FROM resellers r LEFT JOIN orders o ON o.reseller_id=r.id AND o.status IN ('approved','paid','completed') GROUP BY r.id ORDER BY gross DESC`).all();
     return res.json({ok:true,report:rows});
-  } catch(error){return res.status(500).json({ok:false,error:"Erro ao carregar relatório de revendedores"});}
+  } catch(error){return res.status(500).json({ok:false,error:"Erro ao carregar relatÃ³rio de revendedores"});}
 });
 
 app.get("/admin/api/pppoe-subscribers", adminAuth, (req,res)=>{try{return res.json({ok:true,subscribers:db.prepare(`SELECT s.*,e.name AS event_name,CASE WHEN s.status='active' AND s.next_due_at IS NOT NULL AND datetime(s.next_due_at)<datetime('now') THEN 'overdue' ELSE s.status END AS computed_status FROM pppoe_subscribers s LEFT JOIN events e ON e.id=s.event_id ORDER BY s.id DESC`).all()});}catch(error){return res.status(500).json({ok:false,error:"Erro ao carregar assinantes"});}});
-app.post("/admin/api/pppoe-subscribers", adminAuth, (req,res)=>{try{const b=req.body||{},login=String(b.login||"").trim(),name=String(b.name||"").trim(),plan=String(b.plan_name||"").trim();if(!login||!name||!plan)return res.status(400).json({ok:false,error:"Login, nome e plano são obrigatórios"});const now=new Date().toISOString();const result=db.prepare(`INSERT INTO pppoe_subscribers (event_id,login,name,phone,plan_name,monthly_amount,due_day,next_due_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run(Number(b.event_id)||null,login,name,String(b.phone||"").trim()||null,plan,Number(b.monthly_amount)||0,Math.min(31,Math.max(1,Number(b.due_day)||10)),b.next_due_at||null,now,now);return res.status(201).json({ok:true,id:Number(result.lastInsertRowid)});}catch(error){return res.status(400).json({ok:false,error:error.message.includes("UNIQUE")?"Login já cadastrado":"Erro ao criar assinante"});}});
-app.patch("/admin/api/pppoe-subscribers/:id", adminAuth, (req,res)=>{try{const b=req.body||{},fields=[],vals=[];for(const [c,v] of [["name",b.name],["phone",b.phone],["plan_name",b.plan_name],["monthly_amount",b.monthly_amount],["due_day",b.due_day],["next_due_at",b.next_due_at],["status",b.status]])if(v!==undefined){fields.push(`${c}=?`);vals.push(["monthly_amount","due_day"].includes(c)?Number(v)||0:String(v).trim()||null);}if(!fields.length)return res.status(400).json({ok:false,error:"Nenhuma alteração informada"});fields.push("updated_at=?");vals.push(new Date().toISOString(),Number(req.params.id));const result=db.prepare(`UPDATE pppoe_subscribers SET ${fields.join(",")} WHERE id=?`).run(...vals);return res.json({ok:true,updated:Number(result.changes||0)});}catch(error){return res.status(500).json({ok:false,error:"Erro ao atualizar assinante"});}});
+app.post("/admin/api/pppoe-subscribers", adminAuth, (req,res)=>{try{const b=req.body||{},login=String(b.login||"").trim(),name=String(b.name||"").trim(),plan=String(b.plan_name||"").trim();if(!login||!name||!plan)return res.status(400).json({ok:false,error:"Login, nome e plano sÃ£o obrigatÃ³rios"});const now=new Date().toISOString();const result=db.prepare(`INSERT INTO pppoe_subscribers (event_id,login,name,phone,plan_name,monthly_amount,due_day,next_due_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run(Number(b.event_id)||null,login,name,String(b.phone||"").trim()||null,plan,Number(b.monthly_amount)||0,Math.min(31,Math.max(1,Number(b.due_day)||10)),b.next_due_at||null,now,now);return res.status(201).json({ok:true,id:Number(result.lastInsertRowid)});}catch(error){return res.status(400).json({ok:false,error:error.message.includes("UNIQUE")?"Login jÃ¡ cadastrado":"Erro ao criar assinante"});}});
+app.patch("/admin/api/pppoe-subscribers/:id", adminAuth, (req,res)=>{try{const b=req.body||{},fields=[],vals=[];for(const [c,v] of [["name",b.name],["phone",b.phone],["plan_name",b.plan_name],["monthly_amount",b.monthly_amount],["due_day",b.due_day],["next_due_at",b.next_due_at],["status",b.status]])if(v!==undefined){fields.push(`${c}=?`);vals.push(["monthly_amount","due_day"].includes(c)?Number(v)||0:String(v).trim()||null);}if(!fields.length)return res.status(400).json({ok:false,error:"Nenhuma alteraÃ§Ã£o informada"});fields.push("updated_at=?");vals.push(new Date().toISOString(),Number(req.params.id));const result=db.prepare(`UPDATE pppoe_subscribers SET ${fields.join(",")} WHERE id=?`).run(...vals);return res.json({ok:true,updated:Number(result.changes||0)});}catch(error){return res.status(500).json({ok:false,error:"Erro ao atualizar assinante"});}});
 
 app.get("/admin/api/payment-terminals", adminAuth, (req,res)=>{try{return res.json({ok:true,terminals:db.prepare(`SELECT t.*,e.name AS event_name FROM payment_terminals t LEFT JOIN events e ON e.id=t.event_id ORDER BY t.id DESC`).all()});}catch(error){return res.status(500).json({ok:false,error:"Erro ao carregar terminais"});}});
-app.post("/admin/api/payment-terminals", adminAuth, (req,res)=>{try{const b=req.body||{},name=String(b.name||"").trim();if(!name)return res.status(400).json({ok:false,error:"Nome é obrigatório"});const now=new Date().toISOString();const r=db.prepare(`INSERT INTO payment_terminals (event_id,name,provider,serial_number,created_at,updated_at) VALUES (?,?,?,?,?,?)`).run(Number(b.event_id)||null,name,String(b.provider||"manual"),String(b.serial_number||"").trim()||null,now,now);return res.status(201).json({ok:true,id:Number(r.lastInsertRowid)});}catch(error){return res.status(500).json({ok:false,error:"Erro ao criar terminal"});}});
-app.post("/admin/api/payment-terminals/:id/transactions", adminAuth, (req,res)=>{try{const b=req.body||{};const now=new Date().toISOString();const r=db.prepare(`INSERT INTO terminal_transactions (terminal_id,reseller_id,order_id,amount,method,status,external_ref,created_at) VALUES (?,?,?,?,?,?,?,?)`).run(Number(req.params.id),Number(b.reseller_id)||null,Number(b.order_id)||null,Number(b.amount)||0,String(b.method||"pix"),String(b.status||"approved"),String(b.external_ref||"").trim()||null,now);return res.status(201).json({ok:true,id:Number(r.lastInsertRowid)});}catch(error){return res.status(500).json({ok:false,error:"Erro ao registrar transação"});}});
-app.post("/admin/api/terminal-transactions/:id/refund", adminAuth, (req,res)=>{try{const r=db.prepare(`UPDATE terminal_transactions SET status='refunded',refunded_at=? WHERE id=? AND status='approved'`).run(new Date().toISOString(),Number(req.params.id));return res.json({ok:true,refunded:Number(r.changes||0)});}catch(error){return res.status(500).json({ok:false,error:"Erro ao estornar transação"});}});
+app.post("/admin/api/payment-terminals", adminAuth, (req,res)=>{try{const b=req.body||{},name=String(b.name||"").trim();if(!name)return res.status(400).json({ok:false,error:"Nome Ã© obrigatÃ³rio"});const now=new Date().toISOString();const r=db.prepare(`INSERT INTO payment_terminals (event_id,name,provider,serial_number,created_at,updated_at) VALUES (?,?,?,?,?,?)`).run(Number(b.event_id)||null,name,String(b.provider||"manual"),String(b.serial_number||"").trim()||null,now,now);return res.status(201).json({ok:true,id:Number(r.lastInsertRowid)});}catch(error){return res.status(500).json({ok:false,error:"Erro ao criar terminal"});}});
+app.post("/admin/api/payment-terminals/:id/transactions", adminAuth, (req,res)=>{try{const b=req.body||{};const now=new Date().toISOString();const r=db.prepare(`INSERT INTO terminal_transactions (terminal_id,reseller_id,order_id,amount,method,status,external_ref,created_at) VALUES (?,?,?,?,?,?,?,?)`).run(Number(req.params.id),Number(b.reseller_id)||null,Number(b.order_id)||null,Number(b.amount)||0,String(b.method||"pix"),String(b.status||"approved"),String(b.external_ref||"").trim()||null,now);return res.status(201).json({ok:true,id:Number(r.lastInsertRowid)});}catch(error){return res.status(500).json({ok:false,error:"Erro ao registrar transaÃ§Ã£o"});}});
+app.post("/admin/api/terminal-transactions/:id/refund", adminAuth, (req,res)=>{try{const r=db.prepare(`UPDATE terminal_transactions SET status='refunded',refunded_at=? WHERE id=? AND status='approved'`).run(new Date().toISOString(),Number(req.params.id));return res.json({ok:true,refunded:Number(r.changes||0)});}catch(error){return res.status(500).json({ok:false,error:"Erro ao estornar transaÃ§Ã£o"});}});
 
-app.get("/admin/api/panel-users", adminAuth, (req,res)=>{try{return res.json({ok:true,users:db.prepare(`SELECT id,username,display_name,role,reseller_id,active,created_at FROM panel_users ORDER BY id DESC`).all()});}catch(error){return res.status(500).json({ok:false,error:"Erro ao carregar usuários"});}});
-app.post("/admin/api/panel-users", adminAuth, (req,res)=>{try{const b=req.body||{},username=String(b.username||"").trim(),password=String(b.password||"");if(!username||password.length<8)return res.status(400).json({ok:false,error:"Usuário e senha de pelo menos 8 caracteres são obrigatórios"});const salt=crypto.randomBytes(16).toString("hex"),hash=crypto.scryptSync(password,salt,64).toString("hex");const now=new Date().toISOString();const r=db.prepare(`INSERT INTO panel_users (username,password_hash,display_name,role,reseller_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)`).run(username,`${salt}:${hash}`,String(b.display_name||username),String(b.role||"reseller"),Number(b.reseller_id)||null,now,now);return res.status(201).json({ok:true,id:Number(r.lastInsertRowid)});}catch(error){return res.status(400).json({ok:false,error:error.message.includes("UNIQUE")?"Usuário já existe":"Erro ao criar usuário"});}});
+app.get("/admin/api/panel-users", adminAuth, requireRole("admin"), (req,res)=>{try{return res.json({ok:true,users:db.prepare(`SELECT id,username,display_name,role,reseller_id,active,created_at FROM panel_users ORDER BY id DESC`).all()});}catch(error){return res.status(500).json({ok:false,error:"Erro ao carregar usuÃ¡rios"});}});
+app.post("/admin/api/panel-users", adminAuth, requireRole("admin"), (req,res)=>{try{const b=req.body||{},username=String(b.username||"").trim(),password=String(b.password||"");if(!username||password.length<8)return res.status(400).json({ok:false,error:"UsuÃ¡rio e senha de pelo menos 8 caracteres sÃ£o obrigatÃ³rios"});const salt=crypto.randomBytes(16).toString("hex"),hash=crypto.scryptSync(password,salt,64).toString("hex");const now=new Date().toISOString();const r=db.prepare(`INSERT INTO panel_users (username,password_hash,display_name,role,reseller_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)`).run(username,`${salt}:${hash}`,String(b.display_name||username),String(b.role||"reseller"),Number(b.reseller_id)||null,now,now);return res.status(201).json({ok:true,id:Number(r.lastInsertRowid)});}catch(error){return res.status(400).json({ok:false,error:error.message.includes("UNIQUE")?"UsuÃ¡rio jÃ¡ existe":"Erro ao criar usuÃ¡rio"});}});
 
 app.get(
   "/admin/api/orders",
@@ -20046,7 +20053,7 @@ app.get(
             ok:false,
 
             error:
-              "Evento inválido"
+              "Evento invÃ¡lido"
 
           });
 
@@ -20072,7 +20079,7 @@ app.get(
             ok:false,
 
             error:
-              "Evento não encontrado"
+              "Evento nÃ£o encontrado"
 
           });
 
@@ -20202,7 +20209,7 @@ app.put(
             ok:false,
 
             error:
-              "Evento não encontrado"
+              "Evento nÃ£o encontrado"
 
           });
 
@@ -20420,7 +20427,7 @@ function validPortFunction(value) {
 // ============================================================
 // LISTAR MIKROTIKS DE UM EVENTO
 //
-// Retorna a MikroTik única do evento com suas portas.
+// Retorna a MikroTik Ãºnica do evento com suas portas.
 // ============================================================
 
 app.get(
@@ -20453,7 +20460,7 @@ app.get(
             ok:false,
 
             error:
-              "Evento não encontrado"
+              "Evento nÃ£o encontrado"
 
           });
 
@@ -20806,7 +20813,7 @@ function normalizeClientNetworkConfig(
     return {
       ok:false,
       error:
-        "Rede de clientes inválida. Use, por exemplo, 10.50.0.0/24."
+        "Rede de clientes invÃ¡lida. Use, por exemplo, 10.50.0.0/24."
     };
 
   }
@@ -20849,7 +20856,7 @@ function normalizeClientNetworkConfig(
     return {
       ok:false,
       error:
-        "Máscara inválida. Escolha entre /32 e /21."
+        "MÃ¡scara invÃ¡lida. Escolha entre /32 e /21."
     };
 
   }
@@ -20862,7 +20869,7 @@ function normalizeClientNetworkConfig(
     return {
       ok:false,
       error:
-        `A rede /${prefix} não comporta gateway + DHCP para o HotSpot. Use /30 até /21.`
+        `A rede /${prefix} nÃ£o comporta gateway + DHCP para o HotSpot. Use /30 atÃ© /21.`
     };
 
   }
@@ -21111,7 +21118,7 @@ function normalizeClientNetworkConfig(
     return {
       ok:false,
       error:
-        "Faixa DHCP inválida: o início do pool é maior que o final."
+        "Faixa DHCP invÃ¡lida: o inÃ­cio do pool Ã© maior que o final."
     };
 
   }
@@ -21134,7 +21141,7 @@ function normalizeClientNetworkConfig(
     return {
       ok:false,
       error:
-        "Faixa DHCP inválida: o gateway não pode ficar dentro do pool dinâmico."
+        "Faixa DHCP invÃ¡lida: o gateway nÃ£o pode ficar dentro do pool dinÃ¢mico."
     };
 
   }
@@ -21209,7 +21216,7 @@ app.post(
       if(!event){
         return res.status(404).json({
           ok:false,
-          error:"Evento não encontrado"
+          error:"Evento nÃ£o encontrado"
         });
       }
 
@@ -21225,7 +21232,7 @@ app.post(
       if(existingRouter){
         return res.status(409).json({
           ok:false,
-          error:"Este evento já possui uma MikroTik cadastrada. Cada evento pode possuir somente uma MikroTik."
+          error:"Este evento jÃ¡ possui uma MikroTik cadastrada. Cada evento pode possuir somente uma MikroTik."
         });
       }
 
@@ -21439,7 +21446,7 @@ app.put(
       if(!router){
         return res.status(404).json({
           ok:false,
-          error:"MikroTik não encontrada"
+          error:"MikroTik nÃ£o encontrada"
         });
       }
 
@@ -21649,7 +21656,7 @@ app.get(
             ok:false,
 
             error:
-              "MikroTik não encontrada"
+              "MikroTik nÃ£o encontrada"
 
           });
 
@@ -21726,7 +21733,7 @@ app.get(
 //   ]
 // }
 //
-// Funções permitidas: wan, hotspot e free.
+// FunÃ§Ãµes permitidas: wan, hotspot e free.
 // ============================================================
 
 
@@ -21750,7 +21757,7 @@ app.put(
       if(!router){
         return res.status(404).json({
           ok:false,
-          error:"MikroTik não encontrada"
+          error:"MikroTik nÃ£o encontrada"
         });
       }
 
@@ -21807,7 +21814,7 @@ app.put(
         ){
           return res.status(400).json({
             ok:false,
-            error:`Porta inválida: ${interfaceName || "(vazia)"}`
+            error:`Porta invÃ¡lida: ${interfaceName || "(vazia)"}`
           });
         }
 
@@ -21823,7 +21830,7 @@ app.put(
         if(!validPortFunction(portFunction)){
           return res.status(400).json({
             ok:false,
-            error:`Função inválida para ${interfaceName}`
+            error:`FunÃ§Ã£o invÃ¡lida para ${interfaceName}`
           });
         }
 
@@ -21851,7 +21858,7 @@ app.put(
       if(secondaryCount > 1){
         return res.status(400).json({
           ok:false,
-          error:"A MikroTik pode possuir no máximo uma porta de LINK SECUNDÁRIO"
+          error:"A MikroTik pode possuir no mÃ¡ximo uma porta de LINK SECUNDÃRIO"
         });
       }
 
@@ -21869,7 +21876,7 @@ app.put(
       ){
         return res.status(400).json({
           ok:false,
-          error:"O failover está ativo. Selecione exatamente uma porta de LINK SECUNDÁRIO."
+          error:"O failover estÃ¡ ativo. Selecione exatamente uma porta de LINK SECUNDÃRIO."
         });
       }
 
@@ -22015,7 +22022,7 @@ app.put(
 
 app.get("/admin/api/events/:eventId/voucher-batches", adminAuth, (req,res) => {
   const eventId = positiveId(req.params.eventId);
-  if(!eventId || !getEventById(eventId)) return res.status(404).json({ok:false,error:"Evento não encontrado"});
+  if(!eventId || !getEventById(eventId)) return res.status(404).json({ok:false,error:"Evento nÃ£o encontrado"});
   const batches = db.prepare(`SELECT b.id,b.event_id,b.first_number,b.last_number,b.plan_id,b.plan_name,b.minutes,b.rate_limit,
     b.mikrotik_profile,b.amount,b.active,b.created_at,b.deleted_at,
     CASE WHEN b.print_data_encrypted IS NULL THEN 0 ELSE 1 END AS has_print_data,
@@ -22030,7 +22037,7 @@ app.get("/admin/api/events/:eventId/voucher-batches", adminAuth, (req,res) => {
 app.get("/admin/api/voucher-batches/:batchId/vouchers", adminAuth, (req,res) => {
   const batchId = positiveId(req.params.batchId);
   const batch = db.prepare("SELECT id,print_data_encrypted FROM voucher_batches WHERE id=? AND deleted_at IS NULL").get(batchId);
-  if(!batch) return res.status(404).json({ok:false,error:"Lote não encontrado"});
+  if(!batch) return res.status(404).json({ok:false,error:"Lote nÃ£o encontrado"});
   let codesByNumber = Object.create(null);
   if(batch.print_data_encrypted){
     try {
@@ -22058,8 +22065,8 @@ app.post("/admin/api/events/:eventId/voucher-batches", adminAuth, async (req,res
     const quantity = Number(req.body?.quantity);
     const ssid = String(req.body?.ssid || "");
     const wifiPassword = String(req.body?.wifi_password || "");
-    if(!eventId || !getEventById(eventId)) return res.status(404).json({ok:false,error:"Evento não encontrado"});
-    if(!ssid.trim() || Buffer.byteLength(ssid,"utf8") > 32) return res.status(400).json({ok:false,error:"Informe o nome exato do Wi-Fi (até 32 bytes)."});
+    if(!eventId || !getEventById(eventId)) return res.status(404).json({ok:false,error:"Evento nÃ£o encontrado"});
+    if(!ssid.trim() || Buffer.byteLength(ssid,"utf8") > 32) return res.status(400).json({ok:false,error:"Informe o nome exato do Wi-Fi (atÃ© 32 bytes)."});
     if(wifiPassword && (Buffer.byteLength(wifiPassword,"utf8") < 8 || Buffer.byteLength(wifiPassword,"utf8") > 63)) return res.status(400).json({ok:false,error:"A senha do Wi-Fi deve ter entre 8 e 63 bytes."});
     const plan = db.prepare(`SELECT * FROM event_plans WHERE event_id=? AND plan_key=? AND active=1 AND deleted_at IS NULL`).get(eventId, String(req.body?.plan_id || ""));
     if(!plan) return res.status(400).json({ok:false,error:"Selecione um plano ativo do evento."});
@@ -22100,7 +22107,7 @@ app.post("/admin/api/events/:eventId/voucher-batches", adminAuth, async (req,res
       wifi:{ssid,has_password:Boolean(wifiPassword),qr_data_url:wifiQrDataUrl}});
   }catch(error){
     console.error("Erro ao gerar lote de vouchers:",error);
-    res.status(500).json({ok:false,error:"Não foi possível gerar o lote de vouchers."});
+    res.status(500).json({ok:false,error:"NÃ£o foi possÃ­vel gerar o lote de vouchers."});
   }
 });
 
@@ -22109,8 +22116,8 @@ app.get("/admin/api/voucher-batches/:batchId/print-data", adminAuth, async (req,
     const batchId = positiveId(req.params.batchId);
     const batch = db.prepare(`SELECT id,first_number,last_number,plan_name,amount,minutes,rate_limit,print_data_encrypted
       FROM voucher_batches WHERE id=? AND deleted_at IS NULL`).get(batchId);
-    if(!batch) return res.status(404).json({ok:false,error:"Lote não encontrado"});
-    if(!batch.print_data_encrypted) return res.status(410).json({ok:false,error:"Este lote foi criado antes do salvamento seguro dos códigos e não pode ser reimpresso."});
+    if(!batch) return res.status(404).json({ok:false,error:"Lote nÃ£o encontrado"});
+    if(!batch.print_data_encrypted) return res.status(410).json({ok:false,error:"Este lote foi criado antes do salvamento seguro dos cÃ³digos e nÃ£o pode ser reimpresso."});
     const saved = decryptVoucherPrintData(batch.print_data_encrypted);
     const wifiPayload = saved.wifiPassword
       ? `WIFI:T:WPA;S:${escapeWifiQrField(saved.ssid)};P:${escapeWifiQrField(saved.wifiPassword)};;`
@@ -22122,7 +22129,7 @@ app.get("/admin/api/voucher-batches/:batchId/print-data", adminAuth, async (req,
       codes:saved.codes,wifi:{ssid:saved.ssid,has_password:Boolean(saved.wifiPassword),qr_data_url}});
   } catch(error) {
     console.error("Erro ao recuperar dados de impressao do voucher:",error);
-    res.status(500).json({ok:false,error:"Não foi possível recuperar os dados para impressão."});
+    res.status(500).json({ok:false,error:"NÃ£o foi possÃ­vel recuperar os dados para impressÃ£o."});
   }
 });
 
@@ -22130,14 +22137,14 @@ app.patch("/admin/api/voucher-batches/:batchId", adminAuth, (req,res) => {
   const batchId = positiveId(req.params.batchId);
   const active = req.body?.active === false || Number(req.body?.active) === 0 ? 0 : 1;
   const result = db.prepare("UPDATE voucher_batches SET active=? WHERE id=? AND deleted_at IS NULL").run(active,batchId);
-  if(!result.changes) return res.status(404).json({ok:false,error:"Lote não encontrado"});
+  if(!result.changes) return res.status(404).json({ok:false,error:"Lote nÃ£o encontrado"});
   res.json({ok:true,active});
 });
 
 app.delete("/admin/api/voucher-batches/:batchId", adminAuth, (req,res) => {
   const batchId = positiveId(req.params.batchId);
   const batch = db.prepare("SELECT id FROM voucher_batches WHERE id=? AND deleted_at IS NULL").get(batchId);
-  if(!batch) return res.status(404).json({ok:false,error:"Lote não encontrado"});
+  if(!batch) return res.status(404).json({ok:false,error:"Lote nÃ£o encontrado"});
   const archive = db.transaction(() => {
     const removed = db.prepare("DELETE FROM vouchers WHERE batch_id=? AND status='unused'").run(batchId);
     const redeemed = db.prepare("SELECT COUNT(*) AS count FROM vouchers WHERE batch_id=? AND status='redeemed'").get(batchId).count;
@@ -22186,7 +22193,7 @@ app.get(
             ok:false,
 
             error:
-              "Evento não encontrado"
+              "Evento nÃ£o encontrado"
 
           });
 
@@ -22293,7 +22300,7 @@ app.post(
             ok:false,
 
             error:
-              "Evento não encontrado"
+              "Evento nÃ£o encontrado"
 
           });
 
@@ -22348,7 +22355,7 @@ app.post(
             ok:false,
 
             error:
-              "Dados do plano inválidos"
+              "Dados do plano invÃ¡lidos"
 
           });
 
@@ -22598,7 +22605,7 @@ app.put(
             ok:false,
 
             error:
-              "Plano não encontrado"
+              "Plano nÃ£o encontrado"
 
           });
 
@@ -22650,7 +22657,7 @@ app.put(
             ok:false,
 
             error:
-              "Valor ou tempo inválido"
+              "Valor ou tempo invÃ¡lido"
 
           });
 
@@ -22904,7 +22911,7 @@ app.delete(
           .status(404)
           .json({
             ok:false,
-            error:"Plano não encontrado"
+            error:"Plano nÃ£o encontrado"
           });
 
       }
@@ -23025,7 +23032,7 @@ app.delete(
 app.post("/admin/api/events/:eventId/plans/reconcile-deleted", adminAuth, (req,res) => {
   const eventId = positiveId(req.params.eventId);
   if(!eventId || !getEventById(eventId)){
-    return res.status(404).json({ok:false,error:"Evento não encontrado"});
+    return res.status(404).json({ok:false,error:"Evento nÃ£o encontrado"});
   }
 
   const deletedProfiles = db.prepare(`
@@ -23071,14 +23078,14 @@ app.post("/admin/api/events/:eventId/plans/reconcile-deleted", adminAuth, (req,r
 // /admin/api/events/:eventId
 //
 // Remove de forma transacional:
-// - liberações da MikroTik
+// - liberaÃ§Ãµes da MikroTik
 // - pedidos
 // - planos
 // - portas
 // - MikroTik
 // - evento
 //
-// O evento padrão/principal fica protegido.
+// O evento padrÃ£o/principal fica protegido.
 // ============================================================
 
 app.delete(
@@ -23102,7 +23109,7 @@ app.delete(
           .status(400)
           .json({
             ok:false,
-            error:"ID do evento inválido"
+            error:"ID do evento invÃ¡lido"
           });
 
       }
@@ -23132,7 +23139,7 @@ app.delete(
           .status(404)
           .json({
             ok:false,
-            error:"Evento não encontrado"
+            error:"Evento nÃ£o encontrado"
           });
 
       }
@@ -23152,14 +23159,14 @@ app.delete(
           .json({
             ok:false,
             error:
-              "O evento principal do sistema não pode ser apagado. Desative-o se necessário."
+              "O evento principal do sistema nÃ£o pode ser apagado. Desative-o se necessÃ¡rio."
           });
 
       }
 
 
       // ========================================================
-      // EXCLUSÃO ATÔMICA
+      // EXCLUSÃƒO ATÃ”MICA
       // ========================================================
 
       const removeEvent =
@@ -23174,9 +23181,9 @@ app.delete(
             );
 
 
-            // Pedidos são histórico financeiro do evento.
-            // Como o usuário confirmou APAGAR, removemos também
-            // estes registros para não deixar dados órfãos.
+            // Pedidos sÃ£o histÃ³rico financeiro do evento.
+            // Como o usuÃ¡rio confirmou APAGAR, removemos tambÃ©m
+            // estes registros para nÃ£o deixar dados Ã³rfÃ£os.
             db.prepare(
               "DELETE FROM orders WHERE event_id=?"
             ).run(
@@ -23217,7 +23224,7 @@ app.delete(
               );
 
 
-              // Monitoramento V2, se já estiver instalado.
+              // Monitoramento V2, se jÃ¡ estiver instalado.
               try{
                 db.prepare(
                   "DELETE FROM router_monitor_events WHERE router_id=?"
@@ -23302,19 +23309,19 @@ app.delete(
 // MONITORAMENTO V2 - MIKROTIK POR EVENTO
 //
 // IMPORTANTE:
-// O estado da MIKROTIK é separado do estado dos LINKS.
+// O estado da MIKROTIK Ã© separado do estado dos LINKS.
 //
 // router_online:
 //   true  = a MikroTik enviou heartbeat recentemente.
-//   false = o backend não recebe heartbeat recente.
+//   false = o backend nÃ£o recebe heartbeat recente.
 //
 // primary_status:
 //   estado do link principal.
 //
 // secondary_status:
-//   estado do link secundário.
+//   estado do link secundÃ¡rio.
 //
-// Cada MikroTik usa seu próprio:
+// Cada MikroTik usa seu prÃ³prio:
 // - router_key
 // - token
 // - event_id
@@ -23371,7 +23378,7 @@ db.exec(`
 
 
 // ============================================================
-// MIGRAÇÃO - CLIENTES HOTSPOT ATIVOS
+// MIGRAÃ‡ÃƒO - CLIENTES HOTSPOT ATIVOS
 // ============================================================
 
 try{
@@ -23411,7 +23418,7 @@ try{
 
 
 // ============================================================
-// MIGRAÇÃO - MACS ONLINE
+// MIGRAÃ‡ÃƒO - MACS ONLINE
 // ============================================================
 
 try{
@@ -23486,7 +23493,7 @@ catch(error){
 
 
 // ============================================================
-// TABELA - HISTÓRICO DO MONITOR POR MIKROTIK
+// TABELA - HISTÃ“RICO DO MONITOR POR MIKROTIK
 // ============================================================
 
 db.exec(`
@@ -23579,7 +23586,7 @@ function normalizeMonitorLinkStatus(
 // ============================================================
 // NORMALIZAR LINK ATIVO DO MONITOR V2
 //
-// PADRÃO INTERNO:
+// PADRÃƒO INTERNO:
 // primary / secondary / none / unknown
 //
 // COMPATIBILIDADE COM O PAINEL:
@@ -23599,8 +23606,8 @@ function normalizeMonitorActiveLink(
       .toLowerCase();
 
 
-  // Aceita também os nomes usados pelo painel antigo,
-  // mas grava internamente no padrão V2.
+  // Aceita tambÃ©m os nomes usados pelo painel antigo,
+  // mas grava internamente no padrÃ£o V2.
   if(
     active ===
     "provider"
@@ -23643,7 +23650,7 @@ function normalizeMonitorActiveLink(
 
 
 // ============================================================
-// REGISTRAR MUDANÇAS IMPORTANTES
+// REGISTRAR MUDANÃ‡AS IMPORTANTES
 // ============================================================
 
 function insertRouterMonitorEvent(
@@ -23727,7 +23734,7 @@ function registerRouterMonitorChange(
 
 
   // ==========================================================
-  // MUDANÇA DO PROVEDOR PRINCIPAL
+  // MUDANÃ‡A DO PROVEDOR PRINCIPAL
   // ==========================================================
 
   if(
@@ -23748,7 +23755,7 @@ function registerRouterMonitorChange(
 
 
   // ==========================================================
-  // MUDANÇA DO LINK SECUNDÁRIO
+  // MUDANÃ‡A DO LINK SECUNDÃRIO
   // ==========================================================
 
   if(
@@ -24391,14 +24398,14 @@ app.post(
 // ============================================================
 // MONTAR RESPOSTA DO MONITOR DE UMA MIKROTIK
 //
-// A MikroTik é considerada comunicando/online se recebeu
-// heartbeat nos últimos 20 segundos.
+// A MikroTik Ã© considerada comunicando/online se recebeu
+// heartbeat nos Ãºltimos 20 segundos.
 //
-// OBSERVAÇÃO:
-// Se todos os links de Internet da MikroTik caírem, ela também
-// deixa de conseguir alcançar o Railway. Portanto "offline"
-// significa "sem comunicação com o backend". Isso não permite
-// distinguir energia desligada de ausência total de Internet.
+// OBSERVAÃ‡ÃƒO:
+// Se todos os links de Internet da MikroTik caÃ­rem, ela tambÃ©m
+// deixa de conseguir alcanÃ§ar o Railway. Portanto "offline"
+// significa "sem comunicaÃ§Ã£o com o backend". Isso nÃ£o permite
+// distinguir energia desligada de ausÃªncia total de Internet.
 // ============================================================
 
 function getRouterMonitorSnapshot(
@@ -24582,7 +24589,7 @@ function getRouterMonitorSnapshot(
 
     // O banco V2 usa primary/secondary.
     // A resposta administrativa usa provider/starlink,
-    // que é o formato esperado pelo painel atual.
+    // que Ã© o formato esperado pelo painel atual.
     active_link:
       !routerOnline
         ? "unknown"
@@ -24628,9 +24635,9 @@ function getRouterMonitorSnapshot(
     // ========================================================
     // ALIASES PARA O ADMIN.HTML ATUAL
     //
-    // Mantêm o renderizador existente funcionando:
+    // MantÃªm o renderizador existente funcionando:
     // provider  = link principal
-    // starlink  = link secundário
+    // starlink  = link secundÃ¡rio
     // ========================================================
 
     provider_status:
@@ -24694,7 +24701,7 @@ function getRouterMonitorSnapshot(
 
 
 // ============================================================
-// LIMITE DO HISTÓRICO V2
+// LIMITE DO HISTÃ“RICO V2
 // ============================================================
 
 function routerMonitorHistoryLimit(
@@ -24733,7 +24740,7 @@ function routerMonitorHistoryLimit(
 
 
 // ============================================================
-// TEMPO NO LINK SECUNDÁRIO HOJE
+// TEMPO NO LINK SECUNDÃRIO HOJE
 // ============================================================
 
 function calculateRouterSecondarySecondsToday(
@@ -25017,7 +25024,7 @@ function getRouterMonitorSummary(
 
 
 // ============================================================
-// MONTAR HISTÓRICO V2 DE UMA MIKROTIK
+// MONTAR HISTÃ“RICO V2 DE UMA MIKROTIK
 // ============================================================
 
 function getRouterMonitorHistory(
@@ -25075,7 +25082,7 @@ function getRouterMonitorHistory(
 
 
 // ============================================================
-// ADMIN - HISTÓRICO V2 DE UM EVENTO
+// ADMIN - HISTÃ“RICO V2 DE UM EVENTO
 // ============================================================
 
 app.get(
@@ -25099,7 +25106,7 @@ app.get(
           .status(400)
           .json({
             ok:false,
-            error:"Evento inválido"
+            error:"Evento invÃ¡lido"
           });
 
       }
@@ -25129,7 +25136,7 @@ app.get(
           .status(404)
           .json({
             ok:false,
-            error:"Evento não encontrado"
+            error:"Evento nÃ£o encontrado"
           });
 
       }
@@ -25220,7 +25227,7 @@ app.get(
     catch(error){
 
       console.error(
-        "Erro histórico V2 do evento:",
+        "Erro histÃ³rico V2 do evento:",
         error
       );
 
@@ -25229,7 +25236,7 @@ app.get(
         .status(500)
         .json({
           ok:false,
-          error:"Erro ao consultar histórico do evento"
+          error:"Erro ao consultar histÃ³rico do evento"
         });
 
     }
@@ -25239,7 +25246,7 @@ app.get(
 
 
 // ============================================================
-// ADMIN - LIMPAR HISTÓRICO V2 DE UM EVENTO
+// ADMIN - LIMPAR HISTÃ“RICO V2 DE UM EVENTO
 // ============================================================
 
 app.delete(
@@ -25257,7 +25264,7 @@ app.delete(
       if(!eventId){
         return res.status(400).json({
           ok:false,
-          error:"Evento inválido"
+          error:"Evento invÃ¡lido"
         });
       }
 
@@ -25290,7 +25297,7 @@ app.delete(
         );
 
       console.log(
-        "HISTÓRICO FAILOVER LIMPO:",
+        "HISTÃ“RICO FAILOVER LIMPO:",
         "event_id=",
         eventId,
         "router_id=",
@@ -25311,13 +25318,13 @@ app.delete(
     }catch(error){
 
       console.error(
-        "Erro ao limpar histórico V2 do evento:",
+        "Erro ao limpar histÃ³rico V2 do evento:",
         error
       );
 
       return res.status(500).json({
         ok:false,
-        error:"Erro ao limpar histórico do evento"
+        error:"Erro ao limpar histÃ³rico do evento"
       });
 
     }
@@ -25327,9 +25334,9 @@ app.delete(
 
 
 // ============================================================
-// ADMIN - HISTÓRICO V2 GLOBAL
+// ADMIN - HISTÃ“RICO V2 GLOBAL
 //
-// Quando nenhum evento está aberto, usa a primeira MikroTik
+// Quando nenhum evento estÃ¡ aberto, usa a primeira MikroTik
 // ativa para manter o comportamento atual do painel.
 // ============================================================
 
@@ -25425,7 +25432,7 @@ app.get(
     catch(error){
 
       console.error(
-        "Erro histórico V2 global:",
+        "Erro histÃ³rico V2 global:",
         error
       );
 
@@ -25434,7 +25441,7 @@ app.get(
         .status(500)
         .json({
           ok:false,
-          error:"Erro ao consultar histórico V2"
+          error:"Erro ao consultar histÃ³rico V2"
         });
 
     }
@@ -25468,7 +25475,7 @@ app.get(
           .status(400)
           .json({
             ok:false,
-            error:"Evento inválido"
+            error:"Evento invÃ¡lido"
           });
 
       }
@@ -25498,7 +25505,7 @@ app.get(
           .status(404)
           .json({
             ok:false,
-            error:"Evento não encontrado"
+            error:"Evento nÃ£o encontrado"
           });
 
       }
@@ -25849,14 +25856,14 @@ app.get(
 // ============================================================
 // FIM DO BLOCO 8.6/10
 
-// BLOCO 9/10 - ROTAS INVÁLIDAS E TRATAMENTO DE ERROS
+// BLOCO 9/10 - ROTAS INVÃLIDAS E TRATAMENTO DE ERROS
 // ============================================================
 
 
 // ============================================================
 // API 404
 //
-// Qualquer rota iniciada por /api que não exista
+// Qualquer rota iniciada por /api que nÃ£o exista
 // cai aqui.
 // ============================================================
 
@@ -25871,7 +25878,7 @@ app.use(
       .json({
 
         error:
-          "Endpoint não encontrado"
+          "Endpoint nÃ£o encontrado"
 
       });
 
@@ -25882,7 +25889,7 @@ app.use(
 // ============================================================
 // ADMIN 404
 //
-// Evita resposta HTML genérica em rotas administrativas
+// Evita resposta HTML genÃ©rica em rotas administrativas
 // inexistentes.
 // ============================================================
 
@@ -25897,7 +25904,7 @@ app.use(
       .json({
 
         error:
-          "Endpoint administrativo não encontrado"
+          "Endpoint administrativo nÃ£o encontrado"
 
       });
 
@@ -25920,7 +25927,7 @@ app.use(
   ) => {
 
     console.error(
-      "ERRO NÃO TRATADO:",
+      "ERRO NÃƒO TRATADO:",
       error
     );
 
@@ -25954,7 +25961,7 @@ app.use(
 // ============================================================
 // FIM DO BLOCO 9/10
 
-// BLOCO 10/10 - INICIALIZAÇÃO DO SERVIDOR
+// BLOCO 10/10 - INICIALIZAÃ‡ÃƒO DO SERVIDOR
 // ============================================================
 
 
@@ -26021,3 +26028,6 @@ app.listen(
 
 // ============================================================
 // FIM DO BLOCO 10/10
+
+
+
