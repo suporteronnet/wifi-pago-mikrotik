@@ -58,12 +58,25 @@ if (
   throw new Error("ADMIN_PASSWORD deve ter ao menos 14 caracteres e combinar 3 tipos: letras minusculas, maiusculas, numeros e simbolos");
 }
 
-const adminAuth = basicAuth({
+const adminBasicAuth = basicAuth({
   users: {
     [adminUser]: adminPassword || crypto.randomBytes(32).toString("hex")
   },
   challenge: true
 });
+
+// Sessões administrativas: o Basic Auth continua aceito durante a migração.
+const adminSessions = new Map();
+function adminAuth(req, res, next) {
+  const token = String(req.headers.cookie || "").split(";").map(v => v.trim()).find(v => v.startsWith("wifi_admin_session="))?.split("=")[1];
+  const session = token ? adminSessions.get(token) : null;
+  if (session && session.expiresAt > Date.now()) {
+    req.adminUser = session.username;
+    req.adminRole = session.role;
+    return next();
+  }
+  return adminBasicAuth(req, res, () => { req.adminUser = adminUser; req.adminRole = "admin"; next(); });
+}
 
 const rateLimitBuckets = new Map();
 
@@ -18311,6 +18324,31 @@ app.get(
     }
   }
 );
+
+app.post("/admin/login", (req, res) => {
+  try {
+    const username = String(req.body?.username || "").trim();
+    const password = String(req.body?.password || "");
+    let role = null;
+    if (username === adminUser && password === adminPassword) role = "admin";
+    if (!role) {
+      const user = db.prepare("SELECT * FROM panel_users WHERE username=? AND active=1").get(username);
+      if (user) {
+        const [salt, stored] = String(user.password_hash).split(":");
+        const derived = crypto.scryptSync(password, salt, 64).toString("hex");
+        if (stored && crypto.timingSafeEqual(Buffer.from(stored, "hex"), Buffer.from(derived, "hex"))) role = user.role;
+      }
+    }
+    if (!role) return res.status(401).json({ ok:false, error:"Usuário ou senha inválidos" });
+    const token = crypto.randomBytes(32).toString("hex");
+    adminSessions.set(token, { username, role, expiresAt: Date.now() + 8 * 60 * 60 * 1000 });
+    res.setHeader("Set-Cookie", `wifi_admin_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
+    return res.json({ ok:true, username, role });
+  } catch (error) { return res.status(500).json({ok:false,error:"Falha no login"}); }
+});
+
+app.post("/admin/logout", (req,res)=>{const token=String(req.headers.cookie||"").split(";").map(v=>v.trim()).find(v=>v.startsWith("wifi_admin_session="))?.split("=")[1];if(token)adminSessions.delete(token);res.setHeader("Set-Cookie","wifi_admin_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");return res.json({ok:true});});
+app.get("/admin/session", adminAuth, (req,res)=>res.json({ok:true,username:req.adminUser||adminUser,role:req.adminRole||"admin"}));
 
 app.get("/api/ad-campaigns", (req, res) => {
   try {
