@@ -2097,6 +2097,12 @@ button:focus-visible,
             <div class="hint">planos pagos</div>
           </div>
 
+          <div class="operational-card amber">
+            <div class="label">📊 Ticket médio</div>
+            <div class="value" id="dashboardAverageTicket">R$ 0,00</div>
+            <div class="hint">valor médio por venda</div>
+          </div>
+
           <div class="operational-card blue">
             <div class="label">📡 No Wi-Fi agora</div>
             <div class="value" id="dashboardWifiClients">0</div>
@@ -2553,6 +2559,13 @@ button:focus-visible,
             onchange="applyPaymentsFilters()"
           >
             <option value="all">Todos os eventos</option>
+          </select>
+
+          <select
+            id="paymentsPlanFilter"
+            onchange="applyPaymentsFilters()"
+          >
+            <option value="all">Todos os planos</option>
           </select>
 
         </div>
@@ -5007,6 +5020,16 @@ button:focus-visible,
           Selecione um evento.
         </div>
 
+      </div>
+
+      <div class="filters" style="margin-top:12px;">
+        <input id="deviceSearchFilter" type="search" placeholder="Buscar nome, MAC, IP ou voucher..." oninput="renderDevices()">
+        <select id="deviceStatusFilter" onchange="renderDevices()">
+          <option value="all">Todos os status</option>
+          <option value="active">Ativos</option>
+          <option value="pending">Pendentes</option>
+          <option value="blocked">Bloqueados</option>
+        </select>
       </div>
 
     </div>
@@ -14364,6 +14387,7 @@ async function loadData(){
 
     updateDashboard();
     populatePaymentsEventFilter();
+    populatePaymentsPlanFilter();
     populateLogEventFilter();
     populateDashboardFunnelFilters();
     renderDashboardFunnel();
@@ -14694,6 +14718,16 @@ function updateDashboard(){
   ){
     dashboardSalesToday.textContent =
       approvedToday.length;
+  }
+
+  const dashboardAverageTicket =
+    document.getElementById("dashboardAverageTicket");
+
+  if (dashboardAverageTicket) {
+    const averageTicket = approvedToday.length
+      ? revenueToday / approvedToday.length
+      : 0;
+    dashboardAverageTicket.textContent = money(averageTicket);
   }
 
 
@@ -18261,6 +18295,10 @@ function applyPaymentsFilters(){
       "all"
     );
 
+  const planFilter = String(
+    document.getElementById("paymentsPlanFilter")?.value || "all"
+  );
+
   const range =
     getPaymentsPeriodRange(
       period
@@ -18282,6 +18320,10 @@ function applyPaymentsFilters(){
           &&
           String(order.event_id ?? "") !== eventFilter
         ){
+          return false;
+        }
+
+        if (planFilter !== "all" && String(order.plan_id ?? order.plan_name ?? "") !== planFilter) {
           return false;
         }
 
@@ -19159,6 +19201,21 @@ function logAmountDisplay(row){
     return serial ? `Voucher #${serial}` : "Voucher";
   }
   return money(row?.amount);
+}
+
+function populatePaymentsPlanFilter(){
+  const select = document.getElementById("paymentsPlanFilter");
+  if (!select) return;
+  const currentValue = String(select.value || "all");
+  const plans = new Map();
+  (Array.isArray(orders) ? orders : []).forEach(order => {
+    const id = order.plan_id != null ? String(order.plan_id) : String(order.plan_name || "");
+    const name = String(order.plan_name || order.plan_id || "").trim();
+    if (id && name) plans.set(id, name);
+  });
+  const options = Array.from(plans.entries()).sort((a,b) => a[1].localeCompare(b[1], "pt-BR"));
+  select.innerHTML = `<option value="all">Todos os planos</option>` + options.map(([id,name]) => `<option value="${escapeHtml(id)}">${escapeHtml(name)}</option>`).join("");
+  if (options.some(([id]) => id === currentValue)) select.value = currentValue;
 }
 
 function renderLogs(){
@@ -24132,13 +24189,24 @@ function renderDevices(){
       ...latestByMac.values()
     ];
 
+  const deviceSearch = String(document.getElementById("deviceSearchFilter")?.value || "").trim().toLowerCase();
+  const deviceStatus = String(document.getElementById("deviceStatusFilter")?.value || "all");
+  const visible = latest.filter(device => {
+    const haystack = [device.device_name, device.mac, device.ip, device.voucher_serial, device.plan_name].map(value => String(value || "").toLowerCase()).join(" ");
+    if (deviceSearch && !haystack.includes(deviceSearch)) return false;
+    if (deviceStatus === "active" && !(device.status === "approved" && !device.expired)) return false;
+    if (deviceStatus === "pending" && device.status !== "pending") return false;
+    if (deviceStatus === "blocked" && device.status !== "blocked") return false;
+    return true;
+  });
+
 
   count.textContent =
-    `${latest.length} dispositivo(s)`;
+    `${visible.length} de ${latest.length} dispositivo(s)`;
 
 
   if(
-    latest.length === 0
+    visible.length === 0
   ){
 
     list.innerHTML = `
@@ -24155,7 +24223,7 @@ function renderDevices(){
 
 
   list.innerHTML =
-    latest.map(
+    visible.map(
       device => {
 
         const applied =
