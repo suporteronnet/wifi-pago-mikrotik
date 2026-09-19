@@ -5175,7 +5175,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   } catch (error) { console.warn("Sessão administrativa indisponível:", error.message); }
 });
-async function adminLogout(){try{await fetch("/admin/logout",{method:"POST"});}finally{window.location.reload();}}
+async function adminLogout(){try{await fetch("/admin/logout",{method:"POST"});}finally{window.location.href="/admin-login.html";}}
 let funnelLogs = [];
 let devices = [];
 let eventDevices = [];
