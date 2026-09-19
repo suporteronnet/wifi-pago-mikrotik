@@ -7241,6 +7241,10 @@ async function loadSponsoredBanner(){
     image.src = campaign.image_path;
     link.href = campaign.target_url || "#";
     if (!campaign.target_url) link.removeAttribute("target");
+    fetch(`/api/ad-campaigns/${Number(campaign.id)}/impression`, {method:"POST", keepalive:true}).catch(() => {});
+    link.addEventListener("click", () => {
+      fetch(`/api/ad-campaigns/${Number(campaign.id)}/click`, {method:"POST", keepalive:true}).catch(() => {});
+    });
     box.style.display = "block";
   } catch (error) { console.warn("Não foi possível carregar anúncio:", error.message); }
 }

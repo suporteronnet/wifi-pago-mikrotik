@@ -807,6 +807,87 @@ CREATE INDEX IF NOT EXISTS idx_ad_campaigns_event_active
   ON ad_campaigns(event_id, active, starts_at, ends_at);
 `);
 
+// Revendedores e regras de comissão por evento.
+db.exec(`
+CREATE TABLE IF NOT EXISTS resellers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER,
+  name TEXT NOT NULL,
+  phone TEXT,
+  email TEXT,
+  commission_percent REAL NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(event_id) REFERENCES events(id)
+);
+CREATE INDEX IF NOT EXISTS idx_resellers_event_active ON resellers(event_id, active);
+`);
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS pppoe_subscribers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER,
+  login TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  phone TEXT,
+  plan_name TEXT NOT NULL,
+  monthly_amount REAL NOT NULL DEFAULT 0,
+  due_day INTEGER NOT NULL DEFAULT 10,
+  status TEXT NOT NULL DEFAULT 'active',
+  last_payment_at TEXT,
+  next_due_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(event_id) REFERENCES events(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pppoe_subscribers_event_status ON pppoe_subscribers(event_id,status);
+`);
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS payment_terminals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER,
+  name TEXT NOT NULL,
+  provider TEXT NOT NULL DEFAULT 'manual',
+  serial_number TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(event_id) REFERENCES events(id)
+);
+CREATE TABLE IF NOT EXISTS terminal_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  terminal_id INTEGER NOT NULL,
+  reseller_id INTEGER,
+  order_id INTEGER,
+  amount REAL NOT NULL DEFAULT 0,
+  method TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'approved',
+  external_ref TEXT,
+  created_at TEXT NOT NULL,
+  refunded_at TEXT,
+  FOREIGN KEY(terminal_id) REFERENCES payment_terminals(id)
+);
+CREATE INDEX IF NOT EXISTS idx_terminal_transactions_status ON terminal_transactions(status,created_at);
+`);
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS panel_users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'reseller',
+  reseller_id INTEGER,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(reseller_id) REFERENCES resellers(id)
+);
+CREATE INDEX IF NOT EXISTS idx_panel_users_active ON panel_users(active,role);
+`);
+
 // Vouchers sao emitidos em lotes por evento e consumidos uma unica vez.
 db.exec(`
 CREATE TABLE IF NOT EXISTS voucher_batches (
@@ -1184,6 +1265,10 @@ ensureColumn(
   "mp_order_id",
   "TEXT"
 );
+
+ensureColumn("reseller_id", "INTEGER");
+ensureColumn("commission_percent", "REAL NOT NULL DEFAULT 0");
+ensureColumn("commission_amount", "REAL NOT NULL DEFAULT 0");
 
 ensureColumn(
   "original_mac",
@@ -18248,6 +18333,17 @@ app.get("/api/ad-campaigns", (req, res) => {
   }
 });
 
+app.post("/api/ad-campaigns/:id/:action", (req, res) => {
+  try {
+    const column = req.params.action === "click" ? "clicks" : req.params.action === "impression" ? "impressions" : null;
+    if (!column) return res.status(400).json({ ok: false });
+    db.prepare(`UPDATE ad_campaigns SET ${column}=${column}+1, updated_at=? WHERE id=?`).run(new Date().toISOString(), Number(req.params.id));
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ ok: false });
+  }
+});
+
 app.delete(
   "/admin/api/audit",
   adminAuth,
@@ -18330,6 +18426,48 @@ app.delete("/admin/api/ad-campaigns/:id", adminAuth, (req, res) => {
     return res.status(500).json({ ok: false, error: "Erro ao excluir campanha" });
   }
 });
+
+app.get("/admin/api/resellers", adminAuth, (req, res) => {
+  try {
+    const rows = db.prepare(`SELECT r.*, e.name AS event_name FROM resellers r LEFT JOIN events e ON e.id=r.event_id ORDER BY r.id DESC`).all();
+    return res.json({ ok:true, resellers:rows });
+  } catch (error) { return res.status(500).json({ok:false,error:"Erro ao carregar revendedores"}); }
+});
+
+app.post("/admin/api/resellers", adminAuth, (req, res) => {
+  try {
+    const body=req.body||{}; const name=String(body.name||"").trim();
+    if(!name) return res.status(400).json({ok:false,error:"Nome é obrigatório"});
+    const now=new Date().toISOString();
+    const result=db.prepare(`INSERT INTO resellers (event_id,name,phone,email,commission_percent,created_at,updated_at) VALUES (?,?,?,?,?,?,?)`).run(Number(body.event_id)||null,name,String(body.phone||"").trim()||null,String(body.email||"").trim()||null,Math.max(0,Number(body.commission_percent)||0),now,now);
+    return res.status(201).json({ok:true,id:Number(result.lastInsertRowid)});
+  } catch(error){ return res.status(500).json({ok:false,error:"Erro ao criar revendedor"}); }
+});
+
+app.patch("/admin/api/resellers/:id", adminAuth, (req,res)=>{
+  try { const b=req.body||{}, fields=[], vals=[]; for(const [c,v] of [["name",b.name],["phone",b.phone],["email",b.email],["event_id",b.event_id],["commission_percent",b.commission_percent]]) if(v!==undefined){fields.push(`${c}=?`);vals.push(c==="commission_percent"?Math.max(0,Number(v)||0):c==="event_id"?(Number(v)||null):String(v).trim()||null);} if(b.active!==undefined){fields.push("active=?");vals.push(b.active?1:0);} if(!fields.length)return res.status(400).json({ok:false,error:"Nenhuma alteração informada"}); fields.push("updated_at=?");vals.push(new Date().toISOString(),Number(req.params.id)); const result=db.prepare(`UPDATE resellers SET ${fields.join(",")} WHERE id=?`).run(...vals); return res.json({ok:true,updated:Number(result.changes||0)}); } catch(error){return res.status(500).json({ok:false,error:"Erro ao atualizar revendedor"});}
+});
+
+app.delete("/admin/api/resellers/:id", adminAuth, (req,res)=>{ try { const result=db.prepare("DELETE FROM resellers WHERE id=?").run(Number(req.params.id)); return res.json({ok:true,deleted:Number(result.changes||0)}); } catch(error){return res.status(500).json({ok:false,error:"Erro ao excluir revendedor"});} });
+
+app.get("/admin/api/resellers/report", adminAuth, (req,res)=>{
+  try {
+    const rows=db.prepare(`SELECT r.id,r.name,r.commission_percent,COUNT(o.id) AS sales,COALESCE(SUM(o.amount),0) AS gross,COALESCE(SUM(COALESCE(o.commission_amount, o.amount*r.commission_percent/100.0)),0) AS commission FROM resellers r LEFT JOIN orders o ON o.reseller_id=r.id AND o.status IN ('approved','paid','completed') GROUP BY r.id ORDER BY gross DESC`).all();
+    return res.json({ok:true,report:rows});
+  } catch(error){return res.status(500).json({ok:false,error:"Erro ao carregar relatório de revendedores"});}
+});
+
+app.get("/admin/api/pppoe-subscribers", adminAuth, (req,res)=>{try{return res.json({ok:true,subscribers:db.prepare(`SELECT s.*,e.name AS event_name,CASE WHEN s.status='active' AND s.next_due_at IS NOT NULL AND datetime(s.next_due_at)<datetime('now') THEN 'overdue' ELSE s.status END AS computed_status FROM pppoe_subscribers s LEFT JOIN events e ON e.id=s.event_id ORDER BY s.id DESC`).all()});}catch(error){return res.status(500).json({ok:false,error:"Erro ao carregar assinantes"});}});
+app.post("/admin/api/pppoe-subscribers", adminAuth, (req,res)=>{try{const b=req.body||{},login=String(b.login||"").trim(),name=String(b.name||"").trim(),plan=String(b.plan_name||"").trim();if(!login||!name||!plan)return res.status(400).json({ok:false,error:"Login, nome e plano são obrigatórios"});const now=new Date().toISOString();const result=db.prepare(`INSERT INTO pppoe_subscribers (event_id,login,name,phone,plan_name,monthly_amount,due_day,next_due_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`).run(Number(b.event_id)||null,login,name,String(b.phone||"").trim()||null,plan,Number(b.monthly_amount)||0,Math.min(31,Math.max(1,Number(b.due_day)||10)),b.next_due_at||null,now,now);return res.status(201).json({ok:true,id:Number(result.lastInsertRowid)});}catch(error){return res.status(400).json({ok:false,error:error.message.includes("UNIQUE")?"Login já cadastrado":"Erro ao criar assinante"});}});
+app.patch("/admin/api/pppoe-subscribers/:id", adminAuth, (req,res)=>{try{const b=req.body||{},fields=[],vals=[];for(const [c,v] of [["name",b.name],["phone",b.phone],["plan_name",b.plan_name],["monthly_amount",b.monthly_amount],["due_day",b.due_day],["next_due_at",b.next_due_at],["status",b.status]])if(v!==undefined){fields.push(`${c}=?`);vals.push(["monthly_amount","due_day"].includes(c)?Number(v)||0:String(v).trim()||null);}if(!fields.length)return res.status(400).json({ok:false,error:"Nenhuma alteração informada"});fields.push("updated_at=?");vals.push(new Date().toISOString(),Number(req.params.id));const result=db.prepare(`UPDATE pppoe_subscribers SET ${fields.join(",")} WHERE id=?`).run(...vals);return res.json({ok:true,updated:Number(result.changes||0)});}catch(error){return res.status(500).json({ok:false,error:"Erro ao atualizar assinante"});}});
+
+app.get("/admin/api/payment-terminals", adminAuth, (req,res)=>{try{return res.json({ok:true,terminals:db.prepare(`SELECT t.*,e.name AS event_name FROM payment_terminals t LEFT JOIN events e ON e.id=t.event_id ORDER BY t.id DESC`).all()});}catch(error){return res.status(500).json({ok:false,error:"Erro ao carregar terminais"});}});
+app.post("/admin/api/payment-terminals", adminAuth, (req,res)=>{try{const b=req.body||{},name=String(b.name||"").trim();if(!name)return res.status(400).json({ok:false,error:"Nome é obrigatório"});const now=new Date().toISOString();const r=db.prepare(`INSERT INTO payment_terminals (event_id,name,provider,serial_number,created_at,updated_at) VALUES (?,?,?,?,?,?)`).run(Number(b.event_id)||null,name,String(b.provider||"manual"),String(b.serial_number||"").trim()||null,now,now);return res.status(201).json({ok:true,id:Number(r.lastInsertRowid)});}catch(error){return res.status(500).json({ok:false,error:"Erro ao criar terminal"});}});
+app.post("/admin/api/payment-terminals/:id/transactions", adminAuth, (req,res)=>{try{const b=req.body||{};const now=new Date().toISOString();const r=db.prepare(`INSERT INTO terminal_transactions (terminal_id,reseller_id,order_id,amount,method,status,external_ref,created_at) VALUES (?,?,?,?,?,?,?,?)`).run(Number(req.params.id),Number(b.reseller_id)||null,Number(b.order_id)||null,Number(b.amount)||0,String(b.method||"pix"),String(b.status||"approved"),String(b.external_ref||"").trim()||null,now);return res.status(201).json({ok:true,id:Number(r.lastInsertRowid)});}catch(error){return res.status(500).json({ok:false,error:"Erro ao registrar transação"});}});
+app.post("/admin/api/terminal-transactions/:id/refund", adminAuth, (req,res)=>{try{const r=db.prepare(`UPDATE terminal_transactions SET status='refunded',refunded_at=? WHERE id=? AND status='approved'`).run(new Date().toISOString(),Number(req.params.id));return res.json({ok:true,refunded:Number(r.changes||0)});}catch(error){return res.status(500).json({ok:false,error:"Erro ao estornar transação"});}});
+
+app.get("/admin/api/panel-users", adminAuth, (req,res)=>{try{return res.json({ok:true,users:db.prepare(`SELECT id,username,display_name,role,reseller_id,active,created_at FROM panel_users ORDER BY id DESC`).all()});}catch(error){return res.status(500).json({ok:false,error:"Erro ao carregar usuários"});}});
+app.post("/admin/api/panel-users", adminAuth, (req,res)=>{try{const b=req.body||{},username=String(b.username||"").trim(),password=String(b.password||"");if(!username||password.length<8)return res.status(400).json({ok:false,error:"Usuário e senha de pelo menos 8 caracteres são obrigatórios"});const salt=crypto.randomBytes(16).toString("hex"),hash=crypto.scryptSync(password,salt,64).toString("hex");const now=new Date().toISOString();const r=db.prepare(`INSERT INTO panel_users (username,password_hash,display_name,role,reseller_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)`).run(username,`${salt}:${hash}`,String(b.display_name||username),String(b.role||"reseller"),Number(b.reseller_id)||null,now,now);return res.status(201).json({ok:true,id:Number(r.lastInsertRowid)});}catch(error){return res.status(400).json({ok:false,error:error.message.includes("UNIQUE")?"Usuário já existe":"Erro ao criar usuário"});}});
 
 app.get(
   "/admin/api/orders",
