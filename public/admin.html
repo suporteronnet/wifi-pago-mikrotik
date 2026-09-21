@@ -3083,7 +3083,7 @@ button:focus-visible,
     class="panel"
   >
 
-    <div class="section"><div class="section-body"><div class="filters"><select id="portalModeEvent"><option value="">Selecione o evento</option></select><select id="portalModeValue"><option value="pix">PIX</option><option value="ads">Anúncios</option><option value="pix_ads">PIX + anúncios</option></select><input id="portalAdsMinutes" type="number" min="1" max="1440" value="15" placeholder="Minutos grátis por anúncio" title="Tempo gratuito liberado após o anúncio"><button type="button" onclick="savePortalMode()">Salvar modo do portal</button></div><div id="portalModeMessage" class="form-message"></div></div></div>
+    <div class="section"><div class="section-body"><div class="filters"><select id="portalModeEvent"><option value="">Selecione o evento</option></select><select id="portalModeValue" onchange="togglePortalAdsMinutes()"><option value="pix">PIX</option><option value="ads">Anúncios</option></select><input id="portalAdsMinutes" type="number" min="1" max="1440" value="15" placeholder="Minutos grátis por anúncio" title="Tempo gratuito liberado após o anúncio"><button type="button" onclick="savePortalMode()">Salvar modo do portal</button></div><div id="portalModeMessage" class="form-message"></div></div></div>
 
 
     <!-- =====================================================
@@ -3194,6 +3194,14 @@ button:focus-visible,
                 placeholder="Ex.: Festa Municipal 2026"
               >
 
+            </div>
+
+            <div class="field">
+              <label for="eventPortalMode">Tipo de hotspot</label>
+              <select id="eventPortalMode">
+                <option value="pix">Hotspot PIX</option>
+                <option value="ads">Hotspot por anúncios</option>
+              </select>
             </div>
 
 
@@ -5129,6 +5137,8 @@ async function loadBannerCampaigns(){
         <strong>${escapeHtml(c.name)}</strong>
         <div style="color:#94a3b8;font-size:12px;margin:5px 0;">${escapeHtml(c.image_path)}${c.target_url ? " • " + escapeHtml(c.target_url) : ""} • 👁 ${Number(c.impressions || 0)} visualizações • 🖱 ${Number(c.clicks || 0)} cliques</div>
         <span class="badge ${c.active ? "badge-approved" : "badge-pending"}">${c.active ? "Ativa" : "Inativa"}</span>
+        <select id="bannerEvent-${Number(c.id)}"><option value="">Vincular a evento...</option>${(Array.isArray(eventsCache)?eventsCache:[]).map(e=>`<option value="${Number(e.id)}">${escapeHtml(e.name||e.event_key||("Evento "+e.id))}</option>`).join("")}</select>
+        <button type="button" onclick="linkBannerEvent(${Number(c.id)})">Vincular</button>
         <button type="button" onclick="toggleBannerCampaign(${Number(c.id)},${c.active ? "false" : "true"})">${c.active ? "Desativar" : "Ativar"}</button>
         <button type="button" onclick="deleteBannerCampaign(${Number(c.id)})">Excluir</button>
       </div>`).join("") : "<div class='loading'>Nenhuma campanha cadastrada.</div>";
@@ -5148,6 +5158,7 @@ async function createBannerCampaign(){
 
 async function toggleBannerCampaign(id, active){ await fetch(`/admin/api/ad-campaigns/${id}`, {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({active})}); loadBannerCampaigns(); }
 async function deleteBannerCampaign(id){ if(!confirm("Excluir esta campanha?")) return; await fetch(`/admin/api/ad-campaigns/${id}`, {method:"DELETE"}); loadBannerCampaigns(); }
+async function linkBannerEvent(id){const eventId=document.getElementById(`bannerEvent-${id}`)?.value;if(!eventId)return;await fetch(`/admin/api/ad-campaigns/${id}/events`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event_id:eventId})});loadBannerCampaigns();}
 
 async function loadResellers(){
   const list=document.getElementById("resellerList"); if(!list)return;
@@ -5167,8 +5178,9 @@ document.addEventListener("DOMContentLoaded",loadPppSubscribers);
 async function loadPanelUsers(){const list=document.getElementById("userList");if(!list)return;try{const response=await fetch("/admin/api/panel-users",{cache:"no-store"});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||"Falha ao carregar usuários");list.innerHTML=(data.users||[]).length?data.users.map(u=>`<div class="section" style="margin-top:10px;padding:12px"><strong>${escapeHtml(u.display_name)}</strong><div style="color:#94a3b8;font-size:12px">${escapeHtml(u.username)} • Perfil: ${escapeHtml(u.role)} • ${u.active?"Ativo":"Inativo"}</div></div>`).join(""):"<div class='loading'>Nenhum usuário adicional.</div>";}catch(error){list.innerHTML=`<div class="form-message error" style="display:block">${escapeHtml(error.message)}</div>`;}}
 async function createPanelUser(){const body={display_name:document.getElementById("userDisplayName")?.value,username:document.getElementById("userUsername")?.value,password:document.getElementById("userPassword")?.value,role:document.getElementById("userRole")?.value};const message=document.getElementById("userMessage");try{const response=await fetch("/admin/api/panel-users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||"Falha ao criar usuário");message.textContent="Usuário criado.";message.className="form-message success";["userDisplayName","userUsername","userPassword"].forEach(id=>{const el=document.getElementById(id);if(el)el.value=""});loadPanelUsers();}catch(error){message.textContent=error.message;message.className="form-message error";}}
 document.addEventListener("DOMContentLoaded",loadPanelUsers);
+document.addEventListener("DOMContentLoaded",()=>{const oldMode=document.getElementById("portalModeEvent");if(oldMode){const section=oldMode.closest(".section");if(section)section.style.display="none";}});
 document.addEventListener("click", async event => { const button=event.target.closest(".sponsored-access-button"); if(!button)return; const minutes=Number(prompt("Minutos de acesso patrocinado:","15")); if(!Number.isFinite(minutes)||minutes<1)return; const eventId=globalDeviceEventId||currentEventId; if(!eventId){alert("Selecione um evento primeiro.");return;} const response=await fetch("/admin/api/devices/sponsored",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event_id:eventId,mac:button.dataset.sponsoredMac,device_name:button.dataset.sponsoredName,minutes})}); const data=await response.json(); alert(data.ok?"Acesso patrocinado enviado para a fila.":(data.error||"Falha ao liberar acesso")); });
-function populatePortalModeEvents(){const select=document.getElementById("portalModeEvent");if(!select)return;select.innerHTML='<option value="">Selecione o evento</option>'+(Array.isArray(eventsCache)?eventsCache:[]).map(e=>`<option value="${Number(e.id)}">${escapeHtml(e.name||e.event_key||("Evento "+e.id))}</option>`).join("");}
+function togglePortalAdsMinutes(){const mode=document.getElementById("portalModeValue")?.value;const input=document.getElementById("portalAdsMinutes");if(!input)return;const enabled=mode!=="pix";input.disabled=!enabled;input.style.opacity=enabled?"1":".45";if(!enabled)input.value="15";}function populatePortalModeEvents(){const select=document.getElementById("portalModeEvent");if(!select)return;select.innerHTML='<option value="">Selecione o evento</option>'+(Array.isArray(eventsCache)?eventsCache:[]).map(e=>`<option value="${Number(e.id)}">${escapeHtml(e.name||e.event_key||("Evento "+e.id))}</option>`).join("");}
 async function savePortalMode(){const eventId=document.getElementById("portalModeEvent")?.value,mode=document.getElementById("portalModeValue")?.value,minutes=document.getElementById("portalAdsMinutes")?.value,msg=document.getElementById("portalModeMessage");if(!eventId){msg.textContent="Selecione um evento.";msg.className="form-message error";return;}const response=await fetch(`/admin/api/events/${eventId}/portal-mode`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({portal_mode:mode,ads_free_minutes:minutes})});const data=await response.json();msg.textContent=data.ok?"Modo salvo.":(data.error||"Falha ao salvar");msg.className=`form-message ${data.ok?"success":"error"}`;}
 setTimeout(populatePortalModeEvents,1500);
 document.addEventListener("DOMContentLoaded", async () => {
@@ -6566,6 +6578,7 @@ async function createEvent(){
             establishment_name:establishment || "",
             location:location || "",
             description:description || ""
+            ,portal_mode:document.getElementById("eventPortalMode")?.value || "pix"
           })
         }
       );
@@ -6606,6 +6619,10 @@ async function createEvent(){
       Number(
         data.event?.id
       );
+
+    if (Number.isInteger(createdId)) {
+      await fetch(`/admin/api/events/${createdId}/portal-mode`, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({portal_mode:document.getElementById("eventPortalMode")?.value || "pix", ads_free_minutes:15})});
+    }
 
 
     await loadEvents();
@@ -29749,6 +29766,9 @@ document.addEventListener(
 </body>
 
 </html>
+
+
+
 
 
 

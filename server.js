@@ -827,6 +827,18 @@ CREATE INDEX IF NOT EXISTS idx_ad_campaigns_event_active
   ON ad_campaigns(event_id, active, starts_at, ends_at);
 `);
 
+db.exec(`
+CREATE TABLE IF NOT EXISTS ad_campaign_events (
+  campaign_id INTEGER NOT NULL,
+  event_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (campaign_id,event_id),
+  FOREIGN KEY(campaign_id) REFERENCES ad_campaigns(id) ON DELETE CASCADE,
+  FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ad_campaign_events_event ON ad_campaign_events(event_id,campaign_id);
+`);
+
 const eventColumns = db.prepare("PRAGMA table_info(events)").all();
 if (!eventColumns.some(column => column.name === "portal_mode")) {
   db.exec("ALTER TABLE events ADD COLUMN portal_mode TEXT NOT NULL DEFAULT 'pix'");
@@ -18388,9 +18400,9 @@ app.get("/api/ad-campaigns", (req, res) => {
       WHERE a.active=1
         AND (a.starts_at IS NULL OR a.starts_at='' OR a.starts_at<=?)
         AND (a.ends_at IS NULL OR a.ends_at='' OR a.ends_at>=?)
-        AND (?='' OR e.event_key=? OR a.event_id IS NULL)
+        AND (?='' OR ((e.event_key=? AND e.portal_mode IN ('ads','pix_ads')) OR EXISTS (SELECT 1 FROM ad_campaign_events ace JOIN events ae ON ae.id=ace.event_id WHERE ace.campaign_id=a.id AND ae.event_key=? AND ae.portal_mode IN ('ads','pix_ads'))))
       ORDER BY a.id DESC LIMIT 20
-    `).all(now, now, eventKey, eventKey);
+    `).all(now, now, eventKey, eventKey, eventKey);
     return res.json({ ok: true, campaigns: rows });
   } catch (error) {
     console.error("Erro ao carregar anÃºncios pÃºblicos:", error.message);
@@ -18500,6 +18512,10 @@ app.delete("/admin/api/ad-campaigns/:id", adminAuth, (req, res) => {
     return res.status(500).json({ ok: false, error: "Erro ao excluir campanha" });
   }
 });
+
+app.get("/admin/api/ad-campaigns/:id/events", adminAuth, (req,res)=>{try{return res.json({ok:true,events:db.prepare(`SELECT e.id,e.name,e.event_key FROM ad_campaign_events ace JOIN events e ON e.id=ace.event_id WHERE ace.campaign_id=? ORDER BY e.name`).all(Number(req.params.id))});}catch(error){return res.status(500).json({ok:false,error:"Erro ao carregar eventos da campanha"});}});
+app.post("/admin/api/ad-campaigns/:id/events", adminAuth, requireRole("admin","provider"), (req,res)=>{try{const campaignId=Number(req.params.id),eventId=Number(req.body?.event_id);if(!eventId)return res.status(400).json({ok:false,error:"Evento inválido"});db.prepare(`INSERT OR IGNORE INTO ad_campaign_events (campaign_id,event_id,created_at) VALUES (?,?,?)`).run(campaignId,eventId,new Date().toISOString());return res.json({ok:true});}catch(error){return res.status(500).json({ok:false,error:"Erro ao vincular evento"});}});
+app.delete("/admin/api/ad-campaigns/:id/events/:eventId", adminAuth, requireRole("admin","provider"), (req,res)=>{try{const r=db.prepare("DELETE FROM ad_campaign_events WHERE campaign_id=? AND event_id=?").run(Number(req.params.id),Number(req.params.eventId));return res.json({ok:true,deleted:Number(r.changes||0)});}catch(error){return res.status(500).json({ok:false,error:"Erro ao desvincular evento"});}});
 
 app.get("/admin/api/resellers", adminAuth, requireRole("admin","provider"), (req, res) => {
   try {
