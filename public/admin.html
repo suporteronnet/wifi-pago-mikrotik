@@ -5096,7 +5096,7 @@ button:focus-visible,
         <input id="bannerEnds" type="datetime-local" title="Fim (opcional)">
         <button type="button" onclick="createBannerCampaign()">Adicionar campanha</button>
       </div>
-      <div style="color:#94a3b8;font-size:12px;margin:5px 0 10px;">Para o portal cativo, envie a imagem pelo botão de arquivo. O painel guardará a imagem no domínio do portal.</div>
+      <div style="color:#94a3b8;font-size:12px;margin:5px 0 10px;">Para o portal cativo, envie a imagem pelo botão de arquivo. Imagens em endereços externos podem ser bloqueadas antes da liberação do acesso.</div>
       <div id="bannerMessage" class="form-message"></div>
       <div id="bannerList" class="loading">Carregando campanhas...</div>
     </div>
@@ -5163,6 +5163,9 @@ async function loadBannerCampaigns(){
       <div class="section" style="margin-top:10px;padding:12px;">
         <strong>${escapeHtml(c.name)}</strong>
         <div style="color:#94a3b8;font-size:12px;margin:5px 0;">${escapeHtml(c.image_path)}${c.target_url ? " • " + escapeHtml(c.target_url) : ""} • Evento: ${escapeHtml([c.event_name,c.linked_event_names].filter(Boolean).join(", ")||"sem vínculo")} • 👁 ${Number(c.impressions || 0)} visualizações • 🖱 ${Number(c.clicks || 0)} cliques</div>
+        <div style="margin:8px 0;"><img src="${escapeHtml(c.image_path)}" alt="Imagem da campanha ${escapeHtml(c.name)}" style="display:block;width:min(240px,100%);aspect-ratio:3/1;object-fit:contain;background:#0b1728;border:1px solid #334155;border-radius:6px" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><span style="display:none;color:#fca5a5;font-size:12px">Imagem indisponível. Envie o arquivo novamente.</span></div>
+        <input id="bannerReplaceFile-${Number(c.id)}" type="file" accept="image/png,image/jpeg,image/webp" aria-label="Nova imagem da campanha ${escapeHtml(c.name)}">
+        <button type="button" onclick="replaceBannerImage(${Number(c.id)})">Trocar imagem</button>
         <span class="badge ${c.active ? "badge-approved" : "badge-pending"}">${c.active ? "Ativa" : "Inativa"}</span>
         <select id="bannerEvent-${Number(c.id)}"><option value="">Vincular a evento...</option>${(Array.isArray(eventsCache)?eventsCache:[]).filter(e=>String(e.portal_mode)==="ads").map(e=>`<option value="${Number(e.id)}">${escapeHtml(e.name||e.event_key||("Evento "+e.id))}</option>`).join("")}</select>
         <button type="button" onclick="linkBannerEvent(${Number(c.id)})">Vincular</button>
@@ -5194,6 +5197,20 @@ async function createBannerCampaign(){
 }
 
 async function toggleBannerCampaign(id, active){ await fetch(`/admin/api/ad-campaigns/${id}`, {method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({active})}); loadBannerCampaigns(); }
+async function replaceBannerImage(id){
+  const file=document.getElementById(`bannerReplaceFile-${id}`)?.files?.[0];
+  if(!file){alert("Selecione a nova imagem.");return;}
+  if(file.size>900*1024||!["image/png","image/jpeg","image/webp"].includes(file.type)){alert("Use JPG, PNG ou WebP de até 900 KB.");return;}
+  try{
+    const uploaded=await fetch("/admin/api/ad-images",{method:"POST",headers:{"Content-Type":file.type},body:file});
+    const data=await uploaded.json();
+    if(!uploaded.ok||!data.ok)throw new Error(data.error||"Falha ao enviar imagem");
+    const updated=await fetch(`/admin/api/ad-campaigns/${id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({image_path:data.image_path})});
+    const result=await updated.json();
+    if(!updated.ok||!result.ok)throw new Error(result.error||"Falha ao atualizar campanha");
+    await loadBannerCampaigns();
+  }catch(error){alert(error.message||"Não foi possível trocar a imagem.");}
+}
 async function deleteBannerCampaign(id){ if(!confirm("Excluir esta campanha?")) return; await fetch(`/admin/api/ad-campaigns/${id}`, {method:"DELETE"}); loadBannerCampaigns(); }
 async function linkBannerEvent(id){const eventId=document.getElementById(`bannerEvent-${id}`)?.value;if(!eventId)return;await fetch(`/admin/api/ad-campaigns/${id}/events`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event_id:eventId})});loadBannerCampaigns();}
 
@@ -20980,6 +20997,10 @@ function buildMikrotikAdminPullScript(
 
     '',
 
+    '        :foreach h in=[/ip hotspot host find mac-address=$mac] do={ /ip hotspot host remove $h; };',
+
+    '',
+
     '        :set applied true;',
 
     '',
@@ -21034,6 +21055,10 @@ function buildMikrotikAdminPullScript(
 
     '',
 
+    '          :foreach h in=[/ip hotspot host find mac-address=$mac] do={ /ip hotspot host remove $h; };',
+
+    '',
+
     '          :set applied true;',
 
     '',
@@ -21081,6 +21106,10 @@ function buildMikrotikAdminPullScript(
     '',
 
     '        };',
+
+    '',
+
+    '        :foreach h in=[/ip hotspot host find mac-address=$mac] do={ /ip hotspot host remove $h; };',
 
     '',
 
