@@ -841,6 +841,22 @@ CREATE TABLE IF NOT EXISTS ad_campaign_events (
   FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_ad_campaign_events_event ON ad_campaign_events(event_id,campaign_id);
+
+CREATE TABLE IF NOT EXISTS ad_view_sessions (
+  token_hash TEXT PRIMARY KEY,
+  event_id INTEGER NOT NULL,
+  router_id INTEGER NOT NULL,
+  campaign_id INTEGER NOT NULL,
+  mac TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  command_ref TEXT,
+  claimed_at TEXT,
+  FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE CASCADE,
+  FOREIGN KEY(router_id) REFERENCES routers(id) ON DELETE CASCADE,
+  FOREIGN KEY(campaign_id) REFERENCES ad_campaigns(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_ad_view_sessions_expiry ON ad_view_sessions(expires_at);
 `);
 
 const eventColumns = db.prepare("PRAGMA table_info(events)").all();
@@ -15949,6 +15965,16 @@ function enqueueExpiredAdminTemporaryAccess(
 
         )
 
+        AND NOT EXISTS (
+          SELECT 1 FROM admin_commands newer
+          WHERE newer.event_id=t.event_id
+            AND newer.router_id=t.router_id
+            AND newer.mac=t.mac
+            AND newer.command_type IN ('TEMP_ADMIN','SPONSORED')
+            AND newer.status='applied'
+            AND newer.applied_at>t.applied_at
+        )
+
       ORDER BY t.id ASC
 
       LIMIT 50
@@ -18441,6 +18467,128 @@ app.get("/api/portal-config", (req,res)=>{
     const event=db.prepare("SELECT portal_mode,ads_free_minutes FROM events WHERE event_key=? LIMIT 1").get(key);
     return res.json({ok:true,portal_mode:event?.portal_mode||"pix",ads_free_minutes:Number(event?.ads_free_minutes||15)});
   } catch(error){ return res.status(500).json({ok:false,portal_mode:"pix"}); }
+});
+
+const AD_VIEW_SECONDS = 8;
+
+function activeAdCampaign(eventId, campaignId) {
+  return db.prepare(`
+    SELECT a.id, a.name, a.image_path, a.target_url
+    FROM ad_campaigns a
+    WHERE a.id=? AND a.active=1
+      AND (a.starts_at IS NULL OR a.starts_at='' OR a.starts_at<=?)
+      AND (a.ends_at IS NULL OR a.ends_at='' OR a.ends_at>=?)
+      AND (a.event_id=? OR EXISTS (
+        SELECT 1 FROM ad_campaign_events ace
+        WHERE ace.campaign_id=a.id AND ace.event_id=?
+      ))
+    LIMIT 1
+  `).get(campaignId, nowIso(), nowIso(), eventId, eventId);
+}
+
+function adRouterHasClient(routerId, mac) {
+  const monitor = db.prepare(`
+    SELECT hotspot_macs, active_macs, presence_report_at
+    FROM router_monitor_status WHERE router_id=? LIMIT 1
+  `).get(routerId);
+  const presenceTime=Date.parse(monitor?.presence_report_at || "");
+  if (!Number.isFinite(presenceTime) || Date.now()-presenceTime>60000) return false;
+  return `${monitor.hotspot_macs || ""},${monitor.active_macs || ""}`
+    .split(",").some(value => normalizeMac(value) === mac);
+}
+
+app.post("/api/ads/session", createRateLimiter({
+  windowMs:60000, max:30, keyFor:req=>req.ip,
+  message:"Muitas tentativas. Aguarde um minuto."
+}), (req,res)=>{
+  try {
+    const eventKey=String(req.body?.event_key||"").trim();
+    const routerKey=String(req.body?.router_key||"").trim();
+    const mac=normalizeMac(req.body?.mac);
+    const campaignId=positiveId(req.body?.campaign_id);
+    if(!eventKey || !routerKey || !mac || !campaignId) return res.status(400).json({ok:false,error:"Dados do portal inválidos"});
+    const event=db.prepare("SELECT id,portal_mode FROM events WHERE event_key=? AND status='active' LIMIT 1").get(eventKey);
+    if(event?.portal_mode!=="ads") return res.status(404).json({ok:false,error:"Evento de anúncios não encontrado"});
+    const router=db.prepare("SELECT id FROM routers WHERE event_id=? AND router_key=? AND status='active' LIMIT 1").get(event.id,routerKey);
+    if(!router) return res.status(404).json({ok:false,error:"MikroTik deste evento não encontrada"});
+    if(!activeAdCampaign(event.id,campaignId)) return res.status(404).json({ok:false,error:"Anúncio indisponível neste evento"});
+    if(!adRouterHasClient(router.id,mac)) return res.status(409).json({ok:false,error:"Aguardando a MikroTik identificar este aparelho. Tente novamente em alguns segundos."});
+
+    const token=crypto.randomBytes(32).toString("hex");
+    const hash=crypto.createHash("sha256").update(token).digest("hex");
+    const now=nowIso();
+    db.transaction(()=>{
+      db.prepare(`INSERT INTO ad_view_sessions (token_hash,event_id,router_id,campaign_id,mac,created_at,expires_at)
+        VALUES (?,?,?,?,?,?,?)`).run(hash,event.id,router.id,campaignId,mac,now,new Date(Date.now()+15*60000).toISOString());
+      db.prepare("UPDATE ad_campaigns SET impressions=impressions+1,updated_at=? WHERE id=?").run(now,campaignId);
+    })();
+    return res.json({ok:true,token,view_seconds:AD_VIEW_SECONDS});
+  } catch(error) {
+    console.error("Erro ao iniciar anúncio:",error);
+    return res.status(500).json({ok:false,error:"Não foi possível iniciar o anúncio"});
+  }
+});
+
+app.post("/api/ads/access", createRateLimiter({
+  windowMs:60000, max:30, keyFor:req=>req.ip,
+  message:"Muitas tentativas. Aguarde um minuto."
+}), (req,res)=>{
+  try {
+    const token=String(req.body?.token||"");
+    if(!/^[0-9a-f]{64}$/.test(token)) return res.status(400).json({ok:false,error:"Sessão do anúncio inválida"});
+    const hash=crypto.createHash("sha256").update(token).digest("hex");
+    const session=db.prepare("SELECT * FROM ad_view_sessions WHERE token_hash=? LIMIT 1").get(hash);
+    if(!session || Date.parse(session.expires_at)<=Date.now()) return res.status(410).json({ok:false,error:"Anúncio expirado. Abra o portal novamente."});
+    if(!session.command_ref && Date.now()-Date.parse(session.created_at)<AD_VIEW_SECONDS*1000)
+      return res.status(425).json({ok:false,error:"Aguarde o anúncio terminar"});
+    const event=db.prepare("SELECT portal_mode,ads_free_minutes,status FROM events WHERE id=?").get(session.event_id);
+    const router=db.prepare("SELECT status FROM routers WHERE id=? AND event_id=?").get(session.router_id,session.event_id);
+    if(event?.portal_mode!=="ads" || event.status!=="active" || router?.status!=="active")
+      return res.status(409).json({ok:false,error:"Este HotSpot de anúncios está indisponível"});
+    if(!activeAdCampaign(session.event_id,session.campaign_id))
+      return res.status(409).json({ok:false,error:"O anúncio não está mais ativo"});
+    if(!adRouterHasClient(session.router_id,session.mac))
+      return res.status(409).json({ok:false,error:"Aguardando a MikroTik identificar este aparelho. Tente novamente em alguns segundos."});
+
+    const result=db.transaction(()=>{
+      const latest=db.prepare("SELECT command_ref FROM ad_view_sessions WHERE token_hash=?").get(hash);
+      if(latest.command_ref) return latest.command_ref;
+      enqueueExpiredAdminTemporaryAccess(session.event_id,session.router_id);
+      const existing=db.prepare(`SELECT command_ref,status,applied_at,minutes FROM admin_commands
+        WHERE event_id=? AND router_id=? AND mac=? AND command_type='SPONSORED'
+          AND status IN ('pending','applied') ORDER BY id DESC LIMIT 1`).get(session.event_id,session.router_id,session.mac);
+      const active=existing && (existing.status==='pending' ||
+        (existing.status==='applied' && Date.parse(existing.applied_at)+Number(existing.minutes)*60000>Date.now()));
+      const ref=active ? existing.command_ref : createAdminCommand(
+        session.event_id,session.router_id,"SPONSORED",session.mac,"Acesso por anúncio",
+        Math.min(1440,Math.max(1,Number(event.ads_free_minutes)||15))
+      );
+      db.prepare("UPDATE ad_view_sessions SET command_ref=?,claimed_at=?,expires_at=? WHERE token_hash=?")
+        .run(ref,nowIso(),new Date(Date.now()+60*60000).toISOString(),hash);
+      return ref;
+    })();
+    return res.json({ok:true,status:"pending",command_ref:result});
+  } catch(error) {
+    console.error("Erro ao liberar anúncio:",error);
+    return res.status(500).json({ok:false,error:"Não foi possível liberar o acesso"});
+  }
+});
+
+app.post("/api/ads/status", (req,res)=>{
+  try {
+    const token=String(req.body?.token||"");
+    if(!/^[0-9a-f]{64}$/.test(token)) return res.status(400).json({ok:false,error:"Sessão inválida"});
+    const hash=crypto.createHash("sha256").update(token).digest("hex");
+    const session=db.prepare("SELECT command_ref,expires_at FROM ad_view_sessions WHERE token_hash=?").get(hash);
+    if(!session || Date.parse(session.expires_at)<=Date.now()) return res.status(410).json({ok:false,error:"Sessão expirada"});
+    if(!session.command_ref) return res.json({ok:true,status:"viewing"});
+    const command=db.prepare("SELECT status,applied_at,minutes FROM admin_commands WHERE command_ref=?").get(session.command_ref);
+    if(!command) return res.status(404).json({ok:false,error:"Liberação não encontrada"});
+    const expired=command.status==='applied' && Date.parse(command.applied_at)+Number(command.minutes)*60000<=Date.now();
+    return res.json({ok:true,status:expired?'expired':command.status});
+  } catch(error) {
+    return res.status(500).json({ok:false,error:"Não foi possível consultar o acesso"});
+  }
 });
 
 app.post("/api/ad-campaigns/:id/:action", (req, res) => {
@@ -23442,6 +23590,8 @@ db.exec(`
 
     hotspot_macs TEXT,
 
+    presence_report_at TEXT,
+
     last_report_at TEXT,
 
     updated_at TEXT NOT NULL,
@@ -23457,6 +23607,10 @@ db.exec(`
   );
 
 `);
+
+if (!db.prepare("PRAGMA table_info(router_monitor_status)").all().some(column => column.name === "presence_report_at")) {
+  db.exec("ALTER TABLE router_monitor_status ADD COLUMN presence_report_at TEXT");
+}
 
 
 // ============================================================
@@ -24231,6 +24385,7 @@ function updateRouterHeartbeat(
         active_clients,
         active_macs,
         hotspot_macs,
+        presence_report_at,
         last_report_at,
         updated_at
 
@@ -24409,7 +24564,7 @@ function updateRouterPresence(
 
       VALUES (
         ?, ?, 'unknown', 'unknown', 'unknown', 'automatic',
-        NULL, NULL, ?, ?, ?, NULL, ?
+        NULL, NULL, ?, ?, ?, ?, NULL, ?
       )
 
       ON CONFLICT(router_id)
@@ -24419,6 +24574,7 @@ function updateRouterPresence(
         active_clients=excluded.active_clients,
         active_macs=excluded.active_macs,
         hotspot_macs=excluded.hotspot_macs,
+        presence_report_at=excluded.presence_report_at,
         updated_at=excluded.updated_at
 
     `).run(
@@ -24428,6 +24584,7 @@ function updateRouterPresence(
       activeClients,
       activeMacs.join(","),
       hotspotMacs.join(","),
+      now,
       now
 
     );
