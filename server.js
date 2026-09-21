@@ -69,7 +69,11 @@ const adminBasicAuth = basicAuth({
 const adminSessions = new Map();
 function adminAuth(req, res, next) {
   const token = String(req.headers.cookie || "").split(";").map(v => v.trim()).find(v => v.startsWith("wifi_admin_session="))?.split("=")[1];
-  const session = token ? adminSessions.get(token) : null;
+  let session = token ? adminSessions.get(token) : null;
+  if (token && !session && typeof db !== "undefined") {
+    const stored = db.prepare("SELECT username,role,expires_at FROM admin_sessions WHERE token_hash=? AND expires_at>? LIMIT 1").get(crypto.createHash("sha256").update(token).digest("hex"), new Date().toISOString());
+    if (stored) session = { username: stored.username, role: stored.role, expiresAt: Date.parse(stored.expires_at) };
+  }
   if (session && session.expiresAt > Date.now()) {
     req.adminUser = session.username;
     req.adminRole = session.role;
@@ -926,6 +930,17 @@ CREATE TABLE IF NOT EXISTS panel_users (
   FOREIGN KEY(reseller_id) REFERENCES resellers(id)
 );
 CREATE INDEX IF NOT EXISTS idx_panel_users_active ON panel_users(active,role);
+`);
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS admin_sessions (
+  token_hash TEXT PRIMARY KEY,
+  username TEXT NOT NULL,
+  role TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_admin_sessions_expiry ON admin_sessions(expires_at);
 `);
 
 // Vouchers sao emitidos em lotes por evento e consumidos uma unica vez.
@@ -18380,13 +18395,15 @@ app.post("/admin/login", (req, res) => {
     }
     if (!role) return res.status(401).json({ ok:false, error:"UsuÃ¡rio ou senha invÃ¡lidos" });
     const token = crypto.randomBytes(32).toString("hex");
-    adminSessions.set(token, { username, role, expiresAt: Date.now() + 8 * 60 * 60 * 1000 });
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    adminSessions.set(token, { username, role, expiresAt: Date.parse(expiresAt) });
+    db.prepare("INSERT INTO admin_sessions (token_hash,username,role,expires_at,created_at) VALUES (?,?,?,?,?)").run(crypto.createHash("sha256").update(token).digest("hex"), username, role, expiresAt, new Date().toISOString());
     res.setHeader("Set-Cookie", `wifi_admin_session=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=28800${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
     return res.json({ ok:true, username, role });
   } catch (error) { return res.status(500).json({ok:false,error:"Falha no login"}); }
 });
 
-app.post("/admin/logout", (req,res)=>{const token=String(req.headers.cookie||"").split(";").map(v=>v.trim()).find(v=>v.startsWith("wifi_admin_session="))?.split("=")[1];if(token)adminSessions.delete(token);res.setHeader("Set-Cookie","wifi_admin_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");return res.json({ok:true});});
+app.post("/admin/logout", (req,res)=>{const token=String(req.headers.cookie||"").split(";").map(v=>v.trim()).find(v=>v.startsWith("wifi_admin_session="))?.split("=")[1];if(token){adminSessions.delete(token);db.prepare("DELETE FROM admin_sessions WHERE token_hash=?").run(crypto.createHash("sha256").update(token).digest("hex"));}res.setHeader("Set-Cookie","wifi_admin_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");return res.json({ok:true});});
 app.get("/admin/session", adminAuth, (req,res)=>res.json({ok:true,username:req.adminUser||adminUser,role:req.adminRole||"admin"}));
 
 app.get("/api/ad-campaigns", (req, res) => {
