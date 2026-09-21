@@ -55,11 +55,15 @@
 
     function setMessage(value,error=false){message.textContent=value;message.classList.toggle('error',error);}
     function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
-    async function postJson(url,body){
-      const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});
-      const data=await response.json();
-      if(!response.ok || !data.ok){const error=new Error(data.error||'Falha na comunicação');error.status=response.status;throw error;}
-      return data;
+    async function postJson(url,body,timeoutMs=12000){
+      const controller=new AbortController();
+      const timeout=setTimeout(()=>controller.abort(),timeoutMs);
+      try{
+        const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store',signal:controller.signal});
+        const data=await response.json();
+        if(!response.ok || !data.ok){const error=new Error(data.error||'Falha na comunicação');error.status=response.status;throw error;}
+        return data;
+      }finally{clearTimeout(timeout);}
     }
     function imageUrl(value){
       try{const url=new URL(value,location.origin);return ['http:','https:'].includes(url.protocol)?url.href:'';}catch{return '';}
@@ -114,7 +118,7 @@
         throw new Error('A MikroTik ainda não identificou este aparelho. Reconecte ao Wi-Fi e atualize a página.');
       }catch(error){
         button.textContent='Atualizar página';button.disabled=false;button.onclick=()=>location.reload();
-        const networkError=/load failed|failed to fetch|networkerror/i.test(error.message||'');
+        const networkError=/load failed|failed to fetch|networkerror|abort/i.test(error.message||'');
         setMessage(networkError?'Não foi possível carregar o portal. Verifique a conexão e atualize a página.':(error.message||'Não foi possível carregar o anúncio.'),true);
       }
     }
@@ -130,9 +134,9 @@
         let connectionFailed=false;
         for(let attempt=0;attempt<45;attempt++){
           let state;
-          try{state=await postJson('/api/ads/status',{token});}
+          try{state=await postJson('/api/ads/status',{token},6000);}
           catch(error){
-            if(error.status)throw error;
+            if(error.status && error.status<500 && error.status!==429)throw error;
             connectionFailed=true;
             setMessage('A conexão mudou durante a liberação. Verificando novamente...');
             await sleep(2000);
@@ -161,7 +165,7 @@
           : 'A MikroTik ainda não confirmou. Verifique a conexão dela com o painel e tente novamente.');
       }catch(error){
         button.disabled=false;button.textContent='Tentar liberar novamente';
-        const networkError=/load failed|failed to fetch|networkerror/i.test(error.message||'');
+        const networkError=/load failed|failed to fetch|networkerror|abort/i.test(error.message||'');
         setMessage(networkError ? 'A comunicação caiu. Verifique se a internet já funciona; se não funcionar, tente novamente.' : (error.message||'Não foi possível confirmar a liberação.'),true);
       }
       finally{checking=false;}

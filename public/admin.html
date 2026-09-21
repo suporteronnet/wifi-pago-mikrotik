@@ -24490,7 +24490,12 @@ function renderDevices(){
   const visible = latest.filter(device => {
     const haystack = [device.device_name, device.mac, device.ip, device.voucher_serial, device.plan_name].map(value => String(value || "").toLowerCase()).join(" ");
     if (deviceSearch && !haystack.includes(deviceSearch)) return false;
-    if (deviceStatus === "active" && !(device.status === "approved" && !device.expired)) return false;
+    if (deviceStatus === "active" && !(
+      !device.expired && (
+        device.status === "approved" ||
+        (device.status === "applied" && ["BYPASS", "MANUAL_ADMIN", "TEMP_ADMIN", "SPONSORED"].includes(device.command_type))
+      )
+    )) return false;
     if (deviceStatus === "pending" && device.status !== "pending") return false;
     if (deviceStatus === "blocked" && device.status !== "blocked") return false;
     return true;
@@ -24537,9 +24542,13 @@ function renderDevices(){
           "BYPASS";
 
 
+        const isSponsored =
+          device.command_type ===
+          "SPONSORED";
+
         const isTempAdmin =
           device.command_type ===
-          "TEMP_ADMIN";
+          "TEMP_ADMIN" || isSponsored;
 
 
         const isRemove =
@@ -24967,7 +24976,7 @@ function renderDevices(){
         ){
 
           statusText =
-            "Liberando por tempo";
+            isSponsored ? "Liberando por anúncio" : "Liberando por tempo";
 
 
           statusClass =
@@ -25005,7 +25014,7 @@ function renderDevices(){
         ){
 
           statusText =
-            "Acesso temporário";
+            isSponsored ? "Acesso por anúncio" : "Acesso temporário";
 
 
           statusClass =
@@ -25311,7 +25320,9 @@ function renderDevices(){
         // CARD
         // ====================================================
 
-        buttons += `<button type="button" class="sponsored-access-button" data-sponsored-mac="${escapeHtml(device.mac || "")}" data-sponsored-name="${escapeHtml(deviceActionName)}">📣 LIBERAR POR ANÚNCIO</button>`;
+        if(!isSponsored){
+          buttons += `<button type="button" class="sponsored-access-button" data-sponsored-mac="${escapeHtml(device.mac || "")}" data-sponsored-name="${escapeHtml(deviceActionName)}">📣 LIBERAR POR ANÚNCIO</button>`;
+        }
 
         return `
 
@@ -27784,6 +27795,7 @@ function renderEventDevices(){
 
       if(
         commandType === "TEMP_ADMIN"
+        || commandType === "SPONSORED"
       ){
 
         return (
@@ -27890,6 +27902,7 @@ function renderEventDevices(){
             "BYPASS",
             "MANUAL_ADMIN",
             "TEMP_ADMIN",
+            "SPONSORED",
             "UNBYPASS",
             "BLOCK_NOW"
           ].includes(
@@ -28121,9 +28134,13 @@ function renderEventDevices(){
           "MANUAL_ADMIN";
 
 
+        const isSponsored =
+          device.command_type ===
+          "SPONSORED";
+
         const isTempAdmin =
           device.command_type ===
-          "TEMP_ADMIN";
+          "TEMP_ADMIN" || isSponsored;
 
 
         const isRemove =
@@ -28887,7 +28904,7 @@ function renderEventDevices(){
         ){
 
           statusText =
-            "Liberando por tempo";
+            isSponsored ? "Liberando por anúncio" : "Liberando por tempo";
 
 
           statusClass =
@@ -28930,7 +28947,7 @@ function renderEventDevices(){
         ){
 
           statusText =
-            "Acesso temporário";
+            isSponsored ? "Acesso por anúncio" : "Acesso temporário";
 
 
           statusClass =

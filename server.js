@@ -14980,9 +14980,10 @@ app.get(
 
             if(
 
-              row.command_type ===
-              "TEMP_ADMIN"
-              || row.command_type === "SPONSORED"
+              (
+                row.command_type === "TEMP_ADMIN"
+                || row.command_type === "SPONSORED"
+              )
 
               &&
 
