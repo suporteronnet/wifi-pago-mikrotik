@@ -7231,6 +7231,9 @@ async function loadSponsoredBanner(){
   try {
     const params = new URLSearchParams(window.location.search);
     const eventKey = params.get("event_key") || params.get("event") || "";
+    const configResponse = await fetch(`/api/portal-config?event_key=${encodeURIComponent(eventKey)}`, {cache:"no-store"});
+    const config = await configResponse.json();
+    if (!['ads','pix_ads'].includes(config.portal_mode)) return;
     const response = await fetch(`/api/ad-campaigns?event_key=${encodeURIComponent(eventKey)}`, {cache:"no-store"});
     const data = await response.json();
     const campaign = (data.campaigns || [])[0];
@@ -7249,7 +7252,17 @@ async function loadSponsoredBanner(){
   } catch (error) { console.warn("Não foi possível carregar anúncio:", error.message); }
 }
 
+async function loadPortalConfig(){
+  try {
+    const params=new URLSearchParams(window.location.search);
+    const response=await fetch(`/api/portal-config?event_key=${encodeURIComponent(params.get("event_key")||params.get("event")||"")}`,{cache:"no-store"});
+    const data=await response.json();
+    document.body.dataset.portalMode=data.portal_mode||"pix";
+  } catch(error) { document.body.dataset.portalMode="pix"; }
+}
+
 loadSponsoredBanner();
+loadPortalConfig();
 startPortal();
 
 </script>

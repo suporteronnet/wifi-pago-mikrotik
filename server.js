@@ -827,6 +827,11 @@ CREATE INDEX IF NOT EXISTS idx_ad_campaigns_event_active
   ON ad_campaigns(event_id, active, starts_at, ends_at);
 `);
 
+const eventColumns = db.prepare("PRAGMA table_info(events)").all();
+if (!eventColumns.some(column => column.name === "portal_mode")) {
+  db.exec("ALTER TABLE events ADD COLUMN portal_mode TEXT NOT NULL DEFAULT 'pix'");
+}
+
 // Revendedores e regras de comissÃ£o por evento.
 db.exec(`
 CREATE TABLE IF NOT EXISTS resellers (
@@ -18378,6 +18383,15 @@ app.get("/api/ad-campaigns", (req, res) => {
   }
 });
 
+app.get("/api/portal-config", (req,res)=>{
+  try {
+    const key=String(req.query.event_key||req.query.event||"").trim();
+    if(!key) return res.json({ok:true,portal_mode:"pix"});
+    const event=db.prepare("SELECT portal_mode FROM events WHERE event_key=? LIMIT 1").get(key);
+    return res.json({ok:true,portal_mode:event?.portal_mode||"pix"});
+  } catch(error){ return res.status(500).json({ok:false,portal_mode:"pix"}); }
+});
+
 app.post("/api/ad-campaigns/:id/:action", (req, res) => {
   try {
     const column = req.params.action === "click" ? "clicks" : req.params.action === "impression" ? "impressions" : null;
@@ -18477,6 +18491,14 @@ app.get("/admin/api/resellers", adminAuth, requireRole("admin","provider"), (req
     const rows = db.prepare(`SELECT r.*, e.name AS event_name FROM resellers r LEFT JOIN events e ON e.id=r.event_id ORDER BY r.id DESC`).all();
     return res.json({ ok:true, resellers:rows });
   } catch (error) { return res.status(500).json({ok:false,error:"Erro ao carregar revendedores"}); }
+});
+
+app.patch("/admin/api/events/:id/portal-mode", adminAuth, requireRole("admin","provider"), (req,res)=>{
+  const allowed=["pix","ads","pix_ads"];
+  const mode=String(req.body?.portal_mode||"").trim();
+  if(!allowed.includes(mode)) return res.status(400).json({ok:false,error:"Modo inválido"});
+  try { const result=db.prepare("UPDATE events SET portal_mode=? WHERE id=?").run(mode,Number(req.params.id)); return res.json({ok:true,updated:Number(result.changes||0),portal_mode:mode}); }
+  catch(error){ return res.status(500).json({ok:false,error:"Erro ao atualizar modo do portal"}); }
 });
 
 app.post("/admin/api/resellers", adminAuth, requireRole("admin","provider"), (req, res) => {
