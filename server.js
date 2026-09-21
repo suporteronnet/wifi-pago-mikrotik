@@ -16108,16 +16108,15 @@ app.get(
       command.command_type === "TEMP_ADMIN"
       || command.command_type === "SPONSORED"
     ){
-      return res.send(
-        [
-          command.command_type,
-          safeText(command.mac),
-          safeText(command.device_name),
-          Number(command.minutes),
-          safeText(command.rate_limit),
-          safeText(command.command_ref)
-        ].join("|")
-      );
+      const fields=[
+        command.command_type,
+        safeText(command.mac),
+        safeText(command.device_name),
+        Number(command.minutes)
+      ];
+      if(command.rate_limit) fields.push(safeText(command.rate_limit));
+      fields.push(safeText(command.command_ref));
+      return res.send(fields.join("|"));
     }
 
 
@@ -16153,6 +16152,8 @@ app.get(
 // MIKROTIK - CONFIRMAR COMANDO ADMIN DA SUA FILA
 // ============================================================
 
+const missingAdminAckLogAt = new Map();
+
 app.get(
   "/api/mikrotik/admin-ack",
   (req, res) => {
@@ -16181,7 +16182,7 @@ app.get(
         req.query.ref
         ||
         ""
-      ).trim();
+      ).trim().replace(/^\|+/, "");
 
     if(!commandRef){
       return res
@@ -16206,6 +16207,14 @@ app.get(
       );
 
     if(!command){
+      const now=Date.now();
+      const logKey=`${router.id}:${commandRef}`;
+      if(now-(missingAdminAckLogAt.get(logKey)||0)>60000){
+        if(missingAdminAckLogAt.size>1000)missingAdminAckLogAt.clear();
+        missingAdminAckLogAt.set(logKey,now);
+        const pending=db.prepare("SELECT command_ref,command_type FROM admin_commands WHERE event_id=? AND router_id=? AND status='pending' ORDER BY id ASC LIMIT 1").get(router.event_id,router.id);
+        console.warn("WIFI-PAGO-ADMIN ACK não encontrado",{router_id:router.id,received_ref:commandRef,pending_ref:pending?.command_ref||null,pending_type:pending?.command_type||null});
+      }
       return res
         .status(404)
         .type("text/plain")

@@ -20881,37 +20881,45 @@ function buildMikrotikAdminPullScript(
 
     '      # ====================================================',
 
-    '      # REF = SEMPRE O ULTIMO CAMPO DA RESPOSTA',
+    '      # REF = CAMPO FINAL DO FORMATO DE CADA COMANDO',
 
     '      # ====================================================',
 
     '',
 
-    '      :local lastSep $p3;',
+    '      :local refSep $p3;',
 
-    '      :local searchFrom ($p3 + 1);',
+    '      :local p4;',
 
-    '      :local nextSep [:find $data "|" $searchFrom];',
+    '      :if (($command = "TEMP_ADMIN") || ($command = "SPONSORED") || ($command = "MANUAL_ADMIN")) do={',
 
-    '',
+    '        :set p4 [:find $data "|" ($p3 + 1)];',
 
-    '      :while ([:typeof $nextSep] != "nil") do={',
-
-    '',
-
-    '        :set lastSep $nextSep;',
-
-    '        :set searchFrom ($nextSep + 1);',
-
-    '        :set nextSep [:find $data "|" $searchFrom];',
-
-    '',
+    '        :if ([:typeof $p4] != "nil") do={ :set refSep $p4; };',
 
     '      };',
 
     '',
 
-    '      :set ref [:pick $data ($lastSep + 1) [:len $data]];',
+    '      :if (($command = "TEMP_ADMIN") || ($command = "SPONSORED")) do={',
+
+    '        :if ([:typeof $p4] != "nil") do={',
+
+    '          :local p5 [:find $data "|" ($p4 + 1)];',
+
+    '          :if ([:typeof $p5] != "nil") do={ :set refSep $p5; };',
+
+    '        };',
+
+    '      };',
+
+    '',
+
+    '      :set ref [:pick $data ($refSep + 1) [:len $data]];',
+
+    '      :if ([:pick $ref 0 1] = "|") do={ :set ref [:pick $ref 1 [:len $ref]]; };',
+
+    '      :if ([:find $ref "admin_"] != 0) do={ :log warning ("WIFI-PAGO-ADMIN referencia invalida: " . $ref); :error "referencia invalida"; };',
 
     '',
 
@@ -20926,10 +20934,6 @@ function buildMikrotikAdminPullScript(
     '',
 
     '      :if (($command = "TEMP_ADMIN") || ($command = "SPONSORED")) do={',
-
-    '',
-
-    '        :local p4 [:find $data "|" ($p3 + 1)];',
 
     '',
 
