@@ -10601,7 +10601,11 @@ function updateEventScriptGeneratorCard(
         Number(
           router.id
         ),
-        document.getElementById("eventHotspotMode")?.value || "pix"
+        String(
+          currentEventData?.portal_mode ||
+          document.getElementById("eventHotspotMode")?.value ||
+          "pix"
+        ).toLowerCase() === "ads" ? "ads" : "pix"
       );
 
     };
