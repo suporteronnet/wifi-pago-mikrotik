@@ -7258,12 +7258,17 @@ async function loadPortalConfig(){
     const response=await fetch(`/api/portal-config?event_key=${encodeURIComponent(params.get("event_key")||params.get("event")||"")}`,{cache:"no-store"});
     const data=await response.json();
     document.body.dataset.portalMode=data.portal_mode||"pix";
-  } catch(error) { document.body.dataset.portalMode="pix"; }
+    return document.body.dataset.portalMode;
+  } catch(error) { document.body.dataset.portalMode="pix"; return "pix"; }
 }
 
-loadSponsoredBanner();
-loadPortalConfig();
-startPortal();
+loadPortalConfig().then(mode=>{
+  if(mode==="ads"){
+    window.location.replace("/anuncios.html"+window.location.search);
+    return;
+  }
+  startPortal();
+});
 
 </script>
 

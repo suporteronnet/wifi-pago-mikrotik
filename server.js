@@ -18450,7 +18450,7 @@ app.get("/api/ad-campaigns", (req, res) => {
       WHERE a.active=1
         AND (a.starts_at IS NULL OR a.starts_at='' OR a.starts_at<=?)
         AND (a.ends_at IS NULL OR a.ends_at='' OR a.ends_at>=?)
-        AND (?='' OR ((e.event_key=? AND e.portal_mode IN ('ads','pix_ads')) OR EXISTS (SELECT 1 FROM ad_campaign_events ace JOIN events ae ON ae.id=ace.event_id WHERE ace.campaign_id=a.id AND ae.event_key=? AND ae.portal_mode IN ('ads','pix_ads'))))
+        AND (?='' OR ((e.event_key=? AND e.portal_mode='ads') OR EXISTS (SELECT 1 FROM ad_campaign_events ace JOIN events ae ON ae.id=ace.event_id WHERE ace.campaign_id=a.id AND ae.event_key=? AND ae.portal_mode='ads')))
       ORDER BY a.id DESC LIMIT 20
     `).all(now, now, eventKey, eventKey, eventKey);
     return res.json({ ok: true, campaigns: rows });
@@ -18498,7 +18498,7 @@ function adRouterHasClient(routerId, mac) {
 }
 
 app.post("/api/ads/session", createRateLimiter({
-  windowMs:60000, max:30, keyFor:req=>req.ip,
+  windowMs:60000, max:30, keyFor:req=>`${String(req.body?.event_key||"").slice(0,80)}:${normalizeMac(req.body?.mac)}`,
   message:"Muitas tentativas. Aguarde um minuto."
 }), (req,res)=>{
   try {
@@ -18518,6 +18518,7 @@ app.post("/api/ads/session", createRateLimiter({
     const hash=crypto.createHash("sha256").update(token).digest("hex");
     const now=nowIso();
     db.transaction(()=>{
+      db.prepare("DELETE FROM ad_view_sessions WHERE expires_at<?").run(now);
       db.prepare(`INSERT INTO ad_view_sessions (token_hash,event_id,router_id,campaign_id,mac,created_at,expires_at)
         VALUES (?,?,?,?,?,?,?)`).run(hash,event.id,router.id,campaignId,mac,now,new Date(Date.now()+15*60000).toISOString());
       db.prepare("UPDATE ad_campaigns SET impressions=impressions+1,updated_at=? WHERE id=?").run(now,campaignId);
@@ -18530,7 +18531,7 @@ app.post("/api/ads/session", createRateLimiter({
 });
 
 app.post("/api/ads/access", createRateLimiter({
-  windowMs:60000, max:30, keyFor:req=>req.ip,
+  windowMs:60000, max:10, keyFor:req=>String(req.body?.token||"").slice(0,64),
   message:"Muitas tentativas. Aguarde um minuto."
 }), (req,res)=>{
   try {
@@ -18620,11 +18621,47 @@ app.delete(
 // CAMPANHAS DE ANÃšNCIOS
 // ============================================================
 
+const adImageDir=path.join(dataDir,"ad-images");
+fs.mkdirSync(adImageDir,{recursive:true});
+
+app.get("/api/ad-images/:name",(req,res)=>{
+  const name=String(req.params.name||"");
+  if(!/^[0-9a-f-]{36}\.(png|jpg|webp)$/.test(name))return res.status(404).end();
+  return res.sendFile(path.join(adImageDir,name),error=>{
+    if(error && !res.headersSent)res.status(error.statusCode||404).end();
+  });
+});
+
+app.post("/admin/api/ad-images",adminAuth,
+  express.raw({type:["image/png","image/jpeg","image/webp"],limit:"900kb"}),
+  (req,res)=>{
+    try{
+      const bytes=req.body;
+      if(!Buffer.isBuffer(bytes)||bytes.length<12||bytes.length>900*1024)
+        return res.status(400).json({ok:false,error:"Envie uma imagem de até 900 KB"});
+      const png=bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
+      const jpeg=bytes[0]===255&&bytes[1]===216&&bytes[2]===255;
+      const webp=bytes.toString("ascii",0,4)==="RIFF"&&bytes.toString("ascii",8,12)==="WEBP";
+      const type=String(req.headers["content-type"]||"").split(";")[0].trim();
+      const ext=(png&&type==="image/png")?"png":(jpeg&&type==="image/jpeg")?"jpg":(webp&&type==="image/webp")?"webp":"";
+      if(!ext)return res.status(415).json({ok:false,error:"Use uma imagem JPG, PNG ou WebP válida"});
+      const name=`${crypto.randomUUID()}.${ext}`;
+      fs.writeFileSync(path.join(adImageDir,name),bytes,{flag:"wx"});
+      return res.status(201).json({ok:true,image_path:`/api/ad-images/${name}`});
+    }catch(error){
+      console.error("Erro ao enviar imagem do anúncio:",error);
+      return res.status(500).json({ok:false,error:"Não foi possível salvar a imagem"});
+    }
+  }
+);
+
 app.get("/admin/api/ad-campaigns", adminAuth, (req, res) => {
   try {
     const eventId = Number(req.query.event_id || 0);
     const rows = db.prepare(`
-      SELECT a.*, e.name AS event_name
+      SELECT a.*, e.name AS event_name,
+        (SELECT GROUP_CONCAT(linked.name, ', ') FROM ad_campaign_events ace
+         JOIN events linked ON linked.id=ace.event_id WHERE ace.campaign_id=a.id) AS linked_event_names
       FROM ad_campaigns a
       LEFT JOIN events e ON e.id=a.event_id
       ${eventId > 0 ? "WHERE a.event_id=?" : ""}
@@ -18643,9 +18680,12 @@ app.post("/admin/api/ad-campaigns", adminAuth, (req, res) => {
     const name = String(body.name || "").trim();
     const imagePath = String(body.image_path || "").trim();
     if (!name || !imagePath) return res.status(400).json({ ok: false, error: "Nome e imagem sÃ£o obrigatÃ³rios" });
+    const eventId=positiveId(body.event_id);
+    const event=eventId ? db.prepare("SELECT portal_mode FROM events WHERE id=? AND status='active'").get(eventId) : null;
+    if(event?.portal_mode!=="ads") return res.status(400).json({ok:false,error:"Selecione um evento ativo de Hotspot Anúncios"});
     const now = new Date().toISOString();
     const result = db.prepare(`INSERT INTO ad_campaigns (event_id,name,image_path,target_url,starts_at,ends_at,active,created_at,updated_at) VALUES (?,?,?,?,?,?,1,?,?)`).run(
-      Number(body.event_id) || null, name, imagePath, String(body.target_url || "").trim() || null,
+      eventId, name, imagePath, String(body.target_url || "").trim() || null,
       String(body.starts_at || "").trim() || null, String(body.ends_at || "").trim() || null, now, now
     );
     return res.status(201).json({ ok: true, id: Number(result.lastInsertRowid) });
@@ -18686,7 +18726,17 @@ app.delete("/admin/api/ad-campaigns/:id", adminAuth, (req, res) => {
 });
 
 app.get("/admin/api/ad-campaigns/:id/events", adminAuth, (req,res)=>{try{return res.json({ok:true,events:db.prepare(`SELECT e.id,e.name,e.event_key FROM ad_campaign_events ace JOIN events e ON e.id=ace.event_id WHERE ace.campaign_id=? ORDER BY e.name`).all(Number(req.params.id))});}catch(error){return res.status(500).json({ok:false,error:"Erro ao carregar eventos da campanha"});}});
-app.post("/admin/api/ad-campaigns/:id/events", adminAuth, requireRole("admin","provider"), (req,res)=>{try{const campaignId=Number(req.params.id),eventId=Number(req.body?.event_id);if(!eventId)return res.status(400).json({ok:false,error:"Evento inválido"});db.prepare(`INSERT OR IGNORE INTO ad_campaign_events (campaign_id,event_id,created_at) VALUES (?,?,?)`).run(campaignId,eventId,new Date().toISOString());return res.json({ok:true});}catch(error){return res.status(500).json({ok:false,error:"Erro ao vincular evento"});}});
+app.post("/admin/api/ad-campaigns/:id/events", adminAuth, requireRole("admin","provider"), (req,res)=>{
+  try{
+    const campaignId=positiveId(req.params.id),eventId=positiveId(req.body?.event_id);
+    const campaign=campaignId ? db.prepare("SELECT id FROM ad_campaigns WHERE id=?").get(campaignId) : null;
+    const event=eventId ? db.prepare("SELECT portal_mode FROM events WHERE id=? AND status='active'").get(eventId) : null;
+    if(!campaign||event?.portal_mode!=="ads")return res.status(400).json({ok:false,error:"Selecione uma campanha e um evento de anúncios ativos"});
+    db.prepare("INSERT OR IGNORE INTO ad_campaign_events (campaign_id,event_id,created_at) VALUES (?,?,?)")
+      .run(campaignId,eventId,nowIso());
+    return res.json({ok:true});
+  }catch(error){return res.status(500).json({ok:false,error:"Erro ao vincular evento"});}
+});
 app.delete("/admin/api/ad-campaigns/:id/events/:eventId", adminAuth, requireRole("admin","provider"), (req,res)=>{try{const r=db.prepare("DELETE FROM ad_campaign_events WHERE campaign_id=? AND event_id=?").run(Number(req.params.id),Number(req.params.eventId));return res.json({ok:true,deleted:Number(r.changes||0)});}catch(error){return res.status(500).json({ok:false,error:"Erro ao desvincular evento"});}});
 
 app.get("/admin/api/resellers", adminAuth, requireRole("admin","provider"), (req, res) => {
@@ -18697,10 +18747,10 @@ app.get("/admin/api/resellers", adminAuth, requireRole("admin","provider"), (req
 });
 
 app.patch("/admin/api/events/:id/portal-mode", adminAuth, requireRole("admin","provider"), (req,res)=>{
-  const allowed=["pix","ads","pix_ads"];
+  const allowed=["pix","ads"];
   const mode=String(req.body?.portal_mode||"").trim();
   if(!allowed.includes(mode)) return res.status(400).json({ok:false,error:"Modo inválido"});
-  try { const minutes=Math.min(1440,Math.max(1,Number(req.body?.ads_free_minutes)||15)); const result=db.prepare("UPDATE events SET portal_mode=?,ads_free_minutes=? WHERE id=?").run(mode,minutes,Number(req.params.id)); return res.json({ok:true,updated:Number(result.changes||0),portal_mode:mode,ads_free_minutes:minutes}); }
+  try { const minutes=Math.min(1440,Math.max(1,Number(req.body?.ads_free_minutes)||15)); const result=db.prepare("UPDATE events SET portal_mode=?,ads_free_minutes=? WHERE id=?").run(mode,minutes,Number(req.params.id)); if(!result.changes)return res.status(404).json({ok:false,error:"Evento não encontrado"}); return res.json({ok:true,updated:Number(result.changes||0),portal_mode:mode,ads_free_minutes:minutes}); }
   catch(error){ return res.status(500).json({ok:false,error:"Erro ao atualizar modo do portal"}); }
 });
 
@@ -20131,6 +20181,8 @@ app.post(
 
             portal_mode,
 
+            ads_free_minutes,
+
             status,
 
             created_at,
@@ -20140,7 +20192,7 @@ app.post(
           )
 
           VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           )
 
         `).run(
@@ -20187,6 +20239,8 @@ app.post(
             ),
 
           ["ads","pix"].includes(String(req.body?.portal_mode || "")) ? String(req.body.portal_mode) : "pix",
+
+          Math.min(1440,Math.max(1,Number(req.body?.ads_free_minutes)||15)),
 
           "active",
 
@@ -24385,7 +24439,6 @@ function updateRouterHeartbeat(
         active_clients,
         active_macs,
         hotspot_macs,
-        presence_report_at,
         last_report_at,
         updated_at
 
@@ -24557,6 +24610,7 @@ function updateRouterPresence(
         active_clients,
         active_macs,
         hotspot_macs,
+        presence_report_at,
         last_report_at,
         updated_at
 
