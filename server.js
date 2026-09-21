@@ -19956,6 +19956,8 @@ app.post(
 
             timezone,
 
+            portal_mode,
+
             status,
 
             created_at,
@@ -19965,7 +19967,7 @@ app.post(
           )
 
           VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           )
 
         `).run(
@@ -20010,6 +20012,8 @@ app.post(
               0,
               80
             ),
+
+          ["ads","pix"].includes(String(req.body?.portal_mode || "")) ? String(req.body.portal_mode) : "pix",
 
           "active",
 
