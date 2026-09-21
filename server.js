@@ -18480,6 +18480,7 @@ app.get("/api/portal-config", (req,res)=>{
 });
 
 const AD_VIEW_SECONDS = 8;
+const adStories = require('./lib/ad-stories')({app,db,adminAuth,requireRole,normalizeMac,adRouterHasClient});
 
 function activeAdCampaign(eventId, campaignId) {
   return db.prepare(`
@@ -18508,37 +18509,9 @@ function adRouterHasClient(routerId, mac) {
 }
 
 app.post("/api/ads/session", createRateLimiter({
-  windowMs:60000, max:30, keyFor:req=>`${String(req.body?.event_key||"").slice(0,80)}:${normalizeMac(req.body?.mac)}`,
-  message:"Muitas tentativas. Aguarde um minuto."
-}), (req,res)=>{
-  try {
-    const eventKey=String(req.body?.event_key||"").trim();
-    const routerKey=String(req.body?.router_key||"").trim();
-    const mac=normalizeMac(req.body?.mac);
-    const campaignId=positiveId(req.body?.campaign_id);
-    if(!eventKey || !routerKey || !mac || !campaignId) return res.status(400).json({ok:false,error:"Dados do portal inválidos"});
-    const event=db.prepare("SELECT id,portal_mode FROM events WHERE event_key=? AND status='active' LIMIT 1").get(eventKey);
-    if(event?.portal_mode!=="ads") return res.status(404).json({ok:false,error:"Evento de anúncios não encontrado"});
-    const router=db.prepare("SELECT id FROM routers WHERE event_id=? AND router_key=? AND status='active' LIMIT 1").get(event.id,routerKey);
-    if(!router) return res.status(404).json({ok:false,error:"MikroTik deste evento não encontrada"});
-    if(!activeAdCampaign(event.id,campaignId)) return res.status(404).json({ok:false,error:"Anúncio indisponível neste evento"});
-    if(!adRouterHasClient(router.id,mac)) return res.status(409).json({ok:false,error:"Aguardando a MikroTik identificar este aparelho. Tente novamente em alguns segundos."});
-
-    const token=crypto.randomBytes(32).toString("hex");
-    const hash=crypto.createHash("sha256").update(token).digest("hex");
-    const now=nowIso();
-    db.transaction(()=>{
-      db.prepare("DELETE FROM ad_view_sessions WHERE expires_at<?").run(now);
-      db.prepare(`INSERT INTO ad_view_sessions (token_hash,event_id,router_id,campaign_id,mac,created_at,expires_at)
-        VALUES (?,?,?,?,?,?,?)`).run(hash,event.id,router.id,campaignId,mac,now,new Date(Date.now()+15*60000).toISOString());
-      db.prepare("UPDATE ad_campaigns SET impressions=impressions+1,updated_at=? WHERE id=?").run(now,campaignId);
-    })();
-    return res.json({ok:true,token,view_seconds:AD_VIEW_SECONDS});
-  } catch(error) {
-    console.error("Erro ao iniciar anúncio:",error);
-    return res.status(500).json({ok:false,error:"Não foi possível iniciar o anúncio"});
-  }
-});
+  windowMs:60000, max:30, keyFor:req=>String(req.body?.mac||req.ip),
+  message:"Aguarde um minuto antes de tentar novamente."
+}), adStories.start);
 
 app.post("/api/ads/access", createRateLimiter({
   windowMs:60000, max:10, keyFor:req=>String(req.body?.token||"").slice(0,64),
@@ -18550,6 +18523,8 @@ app.post("/api/ads/access", createRateLimiter({
     const hash=crypto.createHash("sha256").update(token).digest("hex");
     const session=db.prepare("SELECT * FROM ad_view_sessions WHERE token_hash=? LIMIT 1").get(hash);
     if(!session || Date.parse(session.expires_at)<=Date.now()) return res.status(410).json({ok:false,error:"Anúncio expirado. Abra o portal novamente."});
+    const storyError=adStories.validateAccess(session);
+    if(storyError)return res.status(409).json({ok:false,error:storyError});
     if(!session.command_ref && Date.now()-Date.parse(session.created_at)<AD_VIEW_SECONDS*1000)
       return res.status(425).json({ok:false,error:"Aguarde o anúncio terminar"});
     const event=db.prepare("SELECT portal_mode,ads_free_minutes,status FROM events WHERE id=?").get(session.event_id);
@@ -18571,11 +18546,13 @@ app.post("/api/ads/access", createRateLimiter({
       const active=existing && (existing.status==='pending' ||
         (existing.status==='applied' && Date.parse(existing.applied_at)+Number(existing.minutes)*60000>Date.now()));
       const ref=active ? existing.command_ref : createAdminCommand(
-        session.event_id,session.router_id,"SPONSORED",session.mac,"Acesso por anúncio",
+        session.event_id,session.router_id,"SPONSORED",session.mac,
+        db.prepare('SELECT name FROM ad_contacts WHERE token_hash=?').get(hash)?.name || "Acesso por anúncio",
         Math.min(1440,Math.max(1,Number(event.ads_free_minutes)||15))
       );
       db.prepare("UPDATE ad_view_sessions SET command_ref=?,claimed_at=?,expires_at=? WHERE token_hash=?")
         .run(ref,nowIso(),new Date(Date.now()+60*60000).toISOString(),hash);
+      db.prepare('UPDATE ad_contacts SET command_ref=? WHERE token_hash=?').run(ref,hash);
       return ref;
     })();
     return res.json({ok:true,status:"pending",command_ref:result});
