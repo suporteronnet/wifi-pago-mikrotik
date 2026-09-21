@@ -13650,6 +13650,8 @@ app.post("/admin/api/devices/sponsored", adminAuth, (req,res)=>{
   try {
     const target=resolveAdminCommandTarget(req.body?.event_id);
     if(!target.ok) return res.status(target.status).json({ok:false,error:target.error});
+    const event=db.prepare("SELECT portal_mode FROM events WHERE id=?").get(target.eventId);
+    if(event?.portal_mode!=="ads") return res.status(400).json({ok:false,error:"A liberação por anúncio exige um evento de Hotspot Anúncios"});
     const mac=normalizeMac(req.body?.mac);
     const minutes=Math.min(1440,Math.max(1,Number(req.body?.minutes)||15));
     if(!mac) return res.status(400).json({ok:false,error:"MAC inválido"});
@@ -14778,6 +14780,9 @@ app.get(
                 ||
                 row.command_type ===
                   "TEMP_ADMIN"
+                ||
+                row.command_type ===
+                  "SPONSORED"
               );
 
 
@@ -14818,7 +14823,8 @@ app.get(
                         ![
                           "BYPASS",
                           "MANUAL_ADMIN",
-                          "TEMP_ADMIN"
+                          "TEMP_ADMIN",
+                          "SPONSORED"
                         ].includes(
                           candidate.command_type
                         )
@@ -14960,6 +14966,7 @@ app.get(
 
               row.command_type ===
               "TEMP_ADMIN"
+              || row.command_type === "SPONSORED"
 
               &&
 
@@ -15914,7 +15921,7 @@ function enqueueExpiredAdminTemporaryAccess(
       WHERE
         t.event_id=?
         AND t.router_id=?
-        AND t.command_type='TEMP_ADMIN'
+        AND t.command_type IN ('TEMP_ADMIN', 'SPONSORED')
         AND t.status='applied'
         AND t.applied_at IS NOT NULL
         AND COALESCE(t.minutes, 0) > 0
@@ -16072,12 +16079,12 @@ app.get(
     }
 
     if(
-      command.command_type ===
-      "TEMP_ADMIN"
+      command.command_type === "TEMP_ADMIN"
+      || command.command_type === "SPONSORED"
     ){
       return res.send(
         [
-          "TEMP_ADMIN",
+          command.command_type,
           safeText(command.mac),
           safeText(command.device_name),
           Number(command.minutes),

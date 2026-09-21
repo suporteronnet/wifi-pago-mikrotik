@@ -10572,20 +10572,17 @@ function updateEventScriptGeneratorCard(
       .join(", ");
 
 
-  summary.innerHTML = `
-    <strong style="color:#86efac;">
-      Planos incluídos no script (${activePlans.length}):
-    </strong>
+  summary.innerHTML = String(currentEventData?.portal_mode || "pix") === "ads"
+    ? '<strong style="color:#86efac;">HotSpot de anúncios: configuração sem planos e vouchers.</strong>'
+    : `
+      <strong style="color:#86efac;">
+        Planos incluídos no script (${activePlans.length}):
+      </strong>
 
-    <div
-      style="
-        margin-top:5px;
-        color:#cbd5e1;
-      "
-    >
-      ${planNames}
-    </div>
-  `;
+      <div style="margin-top:5px;color:#cbd5e1;">
+        ${planNames}
+      </div>
+    `;
 
 
   button.disabled =
@@ -21350,7 +21347,13 @@ function buildDhcpPoolRanges(
 }
 
 
-function buildSingleMikrotikNetworkScript(eventData, router){
+function buildSingleMikrotikNetworkScript(eventData, router, portalMode = "pix"){
+
+  const adsOnly = portalMode === "ads";
+  const poolName = adsOnly ? "pool-wifi-anuncio" : "pool-wifi-pago";
+  const dhcpName = adsOnly ? "dhcp-wifi-anuncio" : "dhcp-wifi-pago";
+  const hotspotName = adsOnly ? "hotspot-wifi-anuncio" : "hotspot-wifi-pago";
+  const hotspotProfile = adsOnly ? "hsprof-wifi-anuncio" : "hsprof-wifi-pago";
 
   const ports=Array.isArray(router?.ports) ? router.ports : [];
 
@@ -21457,7 +21460,7 @@ function buildSingleMikrotikNetworkScript(eventData, router){
 
   const lines=[
     "# ============================================================",
-    "# WIFI PAGO - MIKROTIK UNICA DO EVENTO",
+    adsOnly ? "# WIFI PAGO - HOTSPOT DE ANUNCIOS" : "# WIFI PAGO - MIKROTIK UNICA DO EVENTO",
     `# EVENTO: ${routerOsSafe(eventData?.event?.name || "")}`,
     `# EVENT_KEY: ${routerOsSafe(eventData?.event?.event_key || "")}`,
     `# ROUTER_KEY: ${routerOsSafe(router.router_key || "")}`,
@@ -21502,15 +21505,17 @@ function buildSingleMikrotikNetworkScript(eventData, router){
         ]
       : []
     ),
-    `:if ([:len [/ip pool find name="pool-wifi-pago"]] = 0) do={ /ip pool add name=pool-wifi-pago ranges=${poolRanges} } else={ /ip pool set [find name="pool-wifi-pago"] ranges=${poolRanges} }`,
-    `:if ([:len [/ip dhcp-server find name="dhcp-wifi-pago"]] = 0) do={ /ip dhcp-server add name=dhcp-wifi-pago interface=bridge-clientes address-pool=pool-wifi-pago lease-time=5m disabled=no } else={ /ip dhcp-server set [find name="dhcp-wifi-pago"] interface=bridge-clientes address-pool=pool-wifi-pago lease-time=5m disabled=no }`,
+    `:if ([:len [/ip pool find name="${poolName}"]] = 0) do={ /ip pool add name=${poolName} ranges=${poolRanges} } else={ /ip pool set [find name="${poolName}"] ranges=${poolRanges} }`,
+    `:if ([:len [/ip dhcp-server find name="${dhcpName}"]] = 0) do={ /ip dhcp-server add name=${dhcpName} interface=bridge-clientes address-pool=${poolName} lease-time=5m disabled=no } else={ /ip dhcp-server set [find name="${dhcpName}"] interface=bridge-clientes address-pool=${poolName} lease-time=5m disabled=no }`,
     '/ip dhcp-server network remove [find comment="WIFI-PAGO-DHCP"]',
     `/ip dhcp-server network add address=${clientNetwork} gateway=${gateway} dns-server=${gateway} comment="WIFI-PAGO-DHCP"`,
     '/ip dns set servers=1.1.1.1,8.8.8.8 allow-remote-requests=yes cache-size=8192KiB',
     '/ip dns static remove [find comment="WIFI-PAGO-PORTAL-LOCAL"]',
     `/ip dns static add name="${hotspotDnsName}" address=${gateway} comment="WIFI-PAGO-PORTAL-LOCAL"`,
     '/ip dns static remove [find comment="WIFI-PAGO-BACKEND-LOCAL"]',
-    '/ip dns static add name="wifi-total.duckdns.org" address=192.168.200.250 comment="WIFI-PAGO-BACKEND-LOCAL"',
+    ...(adsOnly ? [] : [
+      '/ip dns static add name="wifi-total.duckdns.org" address=192.168.200.250 comment="WIFI-PAGO-BACKEND-LOCAL"'
+    ]),
     '/ip firewall connection tracking set tcp-established-timeout=1h',
     "",
     "# LIMPAR TABELAS ANTIGAS DE MONITORAMENTO",
@@ -21667,18 +21672,17 @@ function buildSingleMikrotikNetworkScript(eventData, router){
     ),
     "",
     "# HOTSPOT",
-    `:if ([:len [/ip hotspot profile find name="hsprof-wifi-pago"]] = 0) do={ /ip hotspot profile add name=hsprof-wifi-pago hotspot-address=${gateway} dns-name="" html-directory=flash/hotspot login-by=${hotspotLoginBy} ssl-certificate=none mac-auth-mode=mac-as-username-and-password } else={ /ip hotspot profile set [find name="hsprof-wifi-pago"] hotspot-address=${gateway} dns-name="" html-directory=flash/hotspot login-by=${hotspotLoginBy} ssl-certificate=none mac-auth-mode=mac-as-username-and-password }`,
-    `:if ([:len [/ip hotspot profile find name="hsprof-wifi-anuncio"]] = 0) do={ /ip hotspot profile add name=hsprof-wifi-anuncio hotspot-address=${gateway} dns-name="" html-directory=flash/hotspot login-by=${hotspotLoginBy} ssl-certificate=none mac-auth-mode=mac-as-username-and-password }`,
-    ':if ([:len [/ip hotspot find name="hotspot-wifi-pago"]] = 0) do={ /ip hotspot add name=hotspot-wifi-pago interface=bridge-clientes address-pool=pool-wifi-pago profile=hsprof-wifi-pago disabled=no } else={ /ip hotspot set [find name="hotspot-wifi-pago"] interface=bridge-clientes address-pool=pool-wifi-pago profile=hsprof-wifi-pago disabled=no }',
+    `:if ([:len [/ip hotspot profile find name="${hotspotProfile}"]] = 0) do={ /ip hotspot profile add name=${hotspotProfile} hotspot-address=${gateway} dns-name="" html-directory=flash/hotspot login-by=${hotspotLoginBy} ssl-certificate=none mac-auth-mode=mac-as-username-and-password } else={ /ip hotspot profile set [find name="${hotspotProfile}"] hotspot-address=${gateway} dns-name="" html-directory=flash/hotspot login-by=${hotspotLoginBy} ssl-certificate=none mac-auth-mode=mac-as-username-and-password }`,
+    `:if ([:len [/ip hotspot find name="${hotspotName}"]] = 0) do={ /ip hotspot add name=${hotspotName} interface=bridge-clientes address-pool=${poolName} profile=${hotspotProfile} disabled=no } else={ /ip hotspot set [find name="${hotspotName}"] interface=bridge-clientes address-pool=${poolName} profile=${hotspotProfile} disabled=no }`,
     "",
-    "# PERFIS DOS PLANOS"
+    ...(adsOnly ? [] : ["# PERFIS DOS PLANOS"])
   );
 
   const plans=Array.isArray(eventData?.plans)
     ? eventData.plans.filter(plan => Number(plan.active) === 1)
     : [];
 
-  for(const plan of plans){
+  for(const plan of (adsOnly ? [] : plans)){
     const profile=routerOsSafe(plan.mikrotik_profile || "");
     const rate=routerOsSafe(mikrotikRateLimitFromPanel(plan.rate_limit || ""));
     if(!profile) continue;
@@ -22120,6 +22124,7 @@ function ensureMikrotikScriptModal(){
 
 
         <div
+          id="mikrotikScriptModeNotice"
           style="
             margin-top:12px;
             padding:11px;
@@ -22293,18 +22298,11 @@ function ensureMikrotikScriptModal(){
 // ============================================================
 
 function buildAdsOnlyMikrotikScript(eventData, router){
-  const gateway=String(router.client_gateway||"10.50.0.1");
-  const network=String(router.client_network||"10.50.0.0/24");
-  const iface=String(router.client_interface||"bridge-clientes");
-  const poolName="pool-wifi-anuncio";
-  const profile="hsprof-wifi-anuncio";
   return [
-    "/ip pool remove [find name=\"pool-wifi-anuncio\"]",
-    `/ip pool add name=${poolName} ranges=10.50.0.10-10.50.0.254`,
-    `:if ([:len [/ip hotspot profile find name=\"${profile}\"]] = 0) do={ /ip hotspot profile add name=${profile} hotspot-address=${gateway} dns-name=\"\" html-directory=flash/hotspot login-by=mac,cookie,http-chap,http-pap ssl-certificate=none }`,
-    `:if ([:len [/ip hotspot find name=\"hotspot-wifi-anuncio\"]] = 0) do={ /ip hotspot add name=hotspot-wifi-anuncio interface=${iface} address-pool=${poolName} profile=${profile} disabled=no }`,
-    ":log info \"WIFI-PAGO MODO ANUNCIOS CONFIGURADO - sem PIX e sem vouchers\";"
-  ].join("\n");
+    buildSingleMikrotikNetworkScript(eventData, router, "ads"),
+    buildMikrotikAdminPullScript(eventData, router),
+    buildMikrotikHeartbeatScript(eventData, router)
+  ].filter(Boolean).join("\n\n");
 }
 
 function openMikrotikScriptGenerator(
@@ -22423,6 +22421,13 @@ function openMikrotikScriptGenerator(
       document.getElementById(
         "mikrotikGeneratedLogin"
       );
+
+    const modeNotice = document.getElementById("mikrotikScriptModeNotice");
+    if(modeNotice){
+      modeNotice.textContent = portalMode === "ads"
+        ? "O script inclui rede, DHCP, HotSpot de anúncios, comunicação com o painel e monitoramento. O portal de anúncios e a liberação automática ainda precisam ser concluídos antes da instalação."
+        : "O script inclui rede, HotSpot, perfis, PULL, ACK, EXPIRE e monitoramento por MikroTik.";
+    }
 
 
     if(
