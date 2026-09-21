@@ -4029,6 +4029,7 @@ button:focus-visible,
         ==================================================== -->
 
         <div
+          id="eventPaidConfig"
           style="
             margin-bottom:20px;
             padding:15px;
@@ -6352,6 +6353,12 @@ function renderEvents(){
 // EVENTOS - MOSTRAR / OCULTAR FORMULARIO
 // ============================================================
 
+function applyEventPortalMode(mode){
+  const paid=document.getElementById("eventPaidConfig");
+  const isAds=String(mode)==="ads";
+  if(paid) paid.style.display=isAds?"none":"block";
+}
+
 function showNewEventForm(){
 
   const form =
@@ -7086,6 +7093,8 @@ async function openEvent(eventId){
 
     currentEventData =
       data;
+
+    applyEventPortalMode(data.portal_mode || "pix");
 
 
     renderEventDetails(
@@ -10523,7 +10532,7 @@ function updateEventScriptGeneratorCard(
 
 
   if(
-    activePlans.length === 0
+    activePlans.length === 0 && String(currentEventData?.portal_mode || "pix") !== "ads"
   ){
 
     summary.innerHTML = `
