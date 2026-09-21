@@ -7078,6 +7078,12 @@ async function openEvent(eventId){
 
       ...eventData,
 
+      // A API devolve o modo dentro de `event`. Mantemos também no
+      // nível raiz para que o gerador e a interface usem a mesma fonte.
+      portal_mode: String(
+        eventData.portal_mode || eventData.event?.portal_mode || "pix"
+      ).toLowerCase() === "ads" ? "ads" : "pix",
+
       routers:
         Array.isArray(
           routersData.routers
@@ -7098,7 +7104,7 @@ async function openEvent(eventId){
     currentEventData =
       data;
 
-    applyEventPortalMode(data.portal_mode || "pix");
+    applyEventPortalMode(data.portal_mode);
 
 
     renderEventDetails(
