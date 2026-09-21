@@ -3083,6 +3083,8 @@ button:focus-visible,
     class="panel"
   >
 
+    <div class="section"><div class="section-body"><div class="filters"><select id="portalModeEvent"><option value="">Selecione o evento</option></select><select id="portalModeValue"><option value="pix">PIX</option><option value="ads">Anúncios</option><option value="pix_ads">PIX + anúncios</option></select><input id="portalAdsMinutes" type="number" min="1" max="1440" value="15" placeholder="Minutos grátis por anúncio" title="Tempo gratuito liberado após o anúncio"><button type="button" onclick="savePortalMode()">Salvar modo do portal</button></div><div id="portalModeMessage" class="form-message"></div></div></div>
+
 
     <!-- =====================================================
          CABEÇALHO DOS EVENTOS
@@ -4213,6 +4215,12 @@ button:focus-visible,
             Verificando os planos do evento...
           </div>
 
+          <select id="eventHotspotMode" style="width:100%;margin-top:12px;padding:10px;border-radius:8px;background:#0b1729;color:#e2e8f0;border:1px solid #475569">
+            <option value="pix">Hotspot PIX</option>
+            <option value="ads">Hotspot por anúncios</option>
+            <option value="pix_ads">Hotspot PIX + anúncios</option>
+          </select>
+
           <button
             id="eventGenerateScriptButton"
             type="button"
@@ -5159,6 +5167,10 @@ document.addEventListener("DOMContentLoaded",loadPppSubscribers);
 async function loadPanelUsers(){const list=document.getElementById("userList");if(!list)return;try{const response=await fetch("/admin/api/panel-users",{cache:"no-store"});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||"Falha ao carregar usuários");list.innerHTML=(data.users||[]).length?data.users.map(u=>`<div class="section" style="margin-top:10px;padding:12px"><strong>${escapeHtml(u.display_name)}</strong><div style="color:#94a3b8;font-size:12px">${escapeHtml(u.username)} • Perfil: ${escapeHtml(u.role)} • ${u.active?"Ativo":"Inativo"}</div></div>`).join(""):"<div class='loading'>Nenhum usuário adicional.</div>";}catch(error){list.innerHTML=`<div class="form-message error" style="display:block">${escapeHtml(error.message)}</div>`;}}
 async function createPanelUser(){const body={display_name:document.getElementById("userDisplayName")?.value,username:document.getElementById("userUsername")?.value,password:document.getElementById("userPassword")?.value,role:document.getElementById("userRole")?.value};const message=document.getElementById("userMessage");try{const response=await fetch("/admin/api/panel-users",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||"Falha ao criar usuário");message.textContent="Usuário criado.";message.className="form-message success";["userDisplayName","userUsername","userPassword"].forEach(id=>{const el=document.getElementById(id);if(el)el.value=""});loadPanelUsers();}catch(error){message.textContent=error.message;message.className="form-message error";}}
 document.addEventListener("DOMContentLoaded",loadPanelUsers);
+document.addEventListener("click", async event => { const button=event.target.closest(".sponsored-access-button"); if(!button)return; const minutes=Number(prompt("Minutos de acesso patrocinado:","15")); if(!Number.isFinite(minutes)||minutes<1)return; const eventId=globalDeviceEventId||currentEventId; if(!eventId){alert("Selecione um evento primeiro.");return;} const response=await fetch("/admin/api/devices/sponsored",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({event_id:eventId,mac:button.dataset.sponsoredMac,device_name:button.dataset.sponsoredName,minutes})}); const data=await response.json(); alert(data.ok?"Acesso patrocinado enviado para a fila.":(data.error||"Falha ao liberar acesso")); });
+function populatePortalModeEvents(){const select=document.getElementById("portalModeEvent");if(!select)return;select.innerHTML='<option value="">Selecione o evento</option>'+(Array.isArray(eventsCache)?eventsCache:[]).map(e=>`<option value="${Number(e.id)}">${escapeHtml(e.name||e.event_key||("Evento "+e.id))}</option>`).join("");}
+async function savePortalMode(){const eventId=document.getElementById("portalModeEvent")?.value,mode=document.getElementById("portalModeValue")?.value,minutes=document.getElementById("portalAdsMinutes")?.value,msg=document.getElementById("portalModeMessage");if(!eventId){msg.textContent="Selecione um evento.";msg.className="form-message error";return;}const response=await fetch(`/admin/api/events/${eventId}/portal-mode`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({portal_mode:mode,ads_free_minutes:minutes})});const data=await response.json();msg.textContent=data.ok?"Modo salvo.":(data.error||"Falha ao salvar");msg.className=`form-message ${data.ok?"success":"error"}`;}
+setTimeout(populatePortalModeEvents,1500);
 document.addEventListener("DOMContentLoaded", async () => {
   try {
     const response = await fetch("/admin/session", {cache:"no-store"});
@@ -10558,7 +10570,8 @@ function updateEventScriptGeneratorCard(
       openMikrotikScriptGenerator(
         Number(
           router.id
-        )
+        ),
+        document.getElementById("eventHotspotMode")?.value || "pix"
       );
 
     };
@@ -20791,7 +20804,7 @@ function buildMikrotikAdminPullScript(
 
     '',
 
-    '      :if ($command = "TEMP_ADMIN") do={',
+    '      :if (($command = "TEMP_ADMIN") || ($command = "SPONSORED")) do={',
 
     '',
 
@@ -20879,7 +20892,7 @@ function buildMikrotikAdminPullScript(
 
     '',
 
-    '      :if ($command = "TEMP_ADMIN") do={',
+    '      :if (($command = "TEMP_ADMIN") || ($command = "SPONSORED")) do={',
 
     '',
 
@@ -21615,6 +21628,7 @@ function buildSingleMikrotikNetworkScript(eventData, router){
     "",
     "# HOTSPOT",
     `:if ([:len [/ip hotspot profile find name="hsprof-wifi-pago"]] = 0) do={ /ip hotspot profile add name=hsprof-wifi-pago hotspot-address=${gateway} dns-name="" html-directory=flash/hotspot login-by=${hotspotLoginBy} ssl-certificate=none mac-auth-mode=mac-as-username-and-password } else={ /ip hotspot profile set [find name="hsprof-wifi-pago"] hotspot-address=${gateway} dns-name="" html-directory=flash/hotspot login-by=${hotspotLoginBy} ssl-certificate=none mac-auth-mode=mac-as-username-and-password }`,
+    `:if ([:len [/ip hotspot profile find name="hsprof-wifi-anuncio"]] = 0) do={ /ip hotspot profile add name=hsprof-wifi-anuncio hotspot-address=${gateway} dns-name="" html-directory=flash/hotspot login-by=${hotspotLoginBy} ssl-certificate=none mac-auth-mode=mac-as-username-and-password }`,
     ':if ([:len [/ip hotspot find name="hotspot-wifi-pago"]] = 0) do={ /ip hotspot add name=hotspot-wifi-pago interface=bridge-clientes address-pool=pool-wifi-pago profile=hsprof-wifi-pago disabled=no } else={ /ip hotspot set [find name="hotspot-wifi-pago"] interface=bridge-clientes address-pool=pool-wifi-pago profile=hsprof-wifi-pago disabled=no }',
     "",
     "# PERFIS DOS PLANOS"
@@ -22238,8 +22252,24 @@ function ensureMikrotikScriptModal(){
 // GERADOR - ABRIR
 // ============================================================
 
+function buildAdsOnlyMikrotikScript(eventData, router){
+  const gateway=String(router.client_gateway||"10.50.0.1");
+  const network=String(router.client_network||"10.50.0.0/24");
+  const iface=String(router.client_interface||"bridge-clientes");
+  const poolName="pool-wifi-anuncio";
+  const profile="hsprof-wifi-anuncio";
+  return [
+    "/ip pool remove [find name=\"pool-wifi-anuncio\"]",
+    `/ip pool add name=${poolName} ranges=10.50.0.10-10.50.0.254`,
+    `:if ([:len [/ip hotspot profile find name=\"${profile}\"]] = 0) do={ /ip hotspot profile add name=${profile} hotspot-address=${gateway} dns-name=\"\" html-directory=flash/hotspot login-by=mac,cookie,http-chap,http-pap ssl-certificate=none }`,
+    `:if ([:len [/ip hotspot find name=\"hotspot-wifi-anuncio\"]] = 0) do={ /ip hotspot add name=hotspot-wifi-anuncio interface=${iface} address-pool=${poolName} profile=${profile} disabled=no }`,
+    ":log info \"WIFI-PAGO MODO ANUNCIOS CONFIGURADO - sem PIX e sem vouchers\";"
+  ].join("\n");
+}
+
 function openMikrotikScriptGenerator(
-  routerId
+  routerId,
+  portalMode = "pix"
 ){
 
   const router =
@@ -22288,7 +22318,7 @@ function openMikrotikScriptGenerator(
 
 
   if(
-    activePlans.length === 0
+    activePlans.length === 0 && portalMode !== "ads"
   ){
 
     alert(
@@ -22302,11 +22332,9 @@ function openMikrotikScriptGenerator(
 
   try{
 
-    currentGeneratedMikrotikScript =
-      buildMikrotikNetworkScript(
-        currentEventData,
-        router
-      );
+    currentGeneratedMikrotikScript = portalMode === "ads"
+      ? buildAdsOnlyMikrotikScript(currentEventData, router)
+      : buildMikrotikNetworkScript(currentEventData, router);
 
 
     currentGeneratedHeartbeatScript =
@@ -25137,6 +25165,8 @@ function renderDevices(){
         // ====================================================
         // CARD
         // ====================================================
+
+        buttons += `<button type="button" class="sponsored-access-button" data-sponsored-mac="${escapeHtml(device.mac || "")}" data-sponsored-name="${escapeHtml(deviceActionName)}">📣 LIBERAR POR ANÚNCIO</button>`;
 
         return `
 
@@ -29719,4 +29749,7 @@ document.addEventListener(
 </body>
 
 </html>
+
+
+
 

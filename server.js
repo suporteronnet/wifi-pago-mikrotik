@@ -831,6 +831,9 @@ const eventColumns = db.prepare("PRAGMA table_info(events)").all();
 if (!eventColumns.some(column => column.name === "portal_mode")) {
   db.exec("ALTER TABLE events ADD COLUMN portal_mode TEXT NOT NULL DEFAULT 'pix'");
 }
+if (!eventColumns.some(column => column.name === "ads_free_minutes")) {
+  db.exec("ALTER TABLE events ADD COLUMN ads_free_minutes INTEGER NOT NULL DEFAULT 15");
+}
 
 // Revendedores e regras de comissÃ£o por evento.
 db.exec(`
@@ -13616,6 +13619,18 @@ function createAdminCommand(
 // LIBERAÃ‡ÃƒO PERMANENTE
 // ============================================================
 
+app.post("/admin/api/devices/sponsored", adminAuth, (req,res)=>{
+  try {
+    const target=resolveAdminCommandTarget(req.body?.event_id);
+    if(!target.ok) return res.status(target.status).json({ok:false,error:target.error});
+    const mac=normalizeMac(req.body?.mac);
+    const minutes=Math.min(1440,Math.max(1,Number(req.body?.minutes)||15));
+    if(!mac) return res.status(400).json({ok:false,error:"MAC inválido"});
+    const commandRef=createAdminCommand(target.eventId,target.routerId,"SPONSORED",mac,String(req.body?.device_name||"Acesso patrocinado").slice(0,60),minutes,"hsprof-wifi-anuncio");
+    return res.json({ok:true,command_ref:commandRef,command_type:"SPONSORED",minutes});
+  } catch(error){ return res.status(500).json({ok:false,error:"Erro ao liberar acesso patrocinado"}); }
+});
+
 app.post(
   "/admin/api/devices/bypass",
   adminAuth,
@@ -18387,8 +18402,8 @@ app.get("/api/portal-config", (req,res)=>{
   try {
     const key=String(req.query.event_key||req.query.event||"").trim();
     if(!key) return res.json({ok:true,portal_mode:"pix"});
-    const event=db.prepare("SELECT portal_mode FROM events WHERE event_key=? LIMIT 1").get(key);
-    return res.json({ok:true,portal_mode:event?.portal_mode||"pix"});
+    const event=db.prepare("SELECT portal_mode,ads_free_minutes FROM events WHERE event_key=? LIMIT 1").get(key);
+    return res.json({ok:true,portal_mode:event?.portal_mode||"pix",ads_free_minutes:Number(event?.ads_free_minutes||15)});
   } catch(error){ return res.status(500).json({ok:false,portal_mode:"pix"}); }
 });
 
@@ -18497,7 +18512,7 @@ app.patch("/admin/api/events/:id/portal-mode", adminAuth, requireRole("admin","p
   const allowed=["pix","ads","pix_ads"];
   const mode=String(req.body?.portal_mode||"").trim();
   if(!allowed.includes(mode)) return res.status(400).json({ok:false,error:"Modo inválido"});
-  try { const result=db.prepare("UPDATE events SET portal_mode=? WHERE id=?").run(mode,Number(req.params.id)); return res.json({ok:true,updated:Number(result.changes||0),portal_mode:mode}); }
+  try { const minutes=Math.min(1440,Math.max(1,Number(req.body?.ads_free_minutes)||15)); const result=db.prepare("UPDATE events SET portal_mode=?,ads_free_minutes=? WHERE id=?").run(mode,minutes,Number(req.params.id)); return res.json({ok:true,updated:Number(result.changes||0),portal_mode:mode,ads_free_minutes:minutes}); }
   catch(error){ return res.status(500).json({ok:false,error:"Erro ao atualizar modo do portal"}); }
 });
 
