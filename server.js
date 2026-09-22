@@ -10,6 +10,7 @@ const crypto = require("crypto");
 const QRCode = require("qrcode");
 const path = require("path");
 const fs = require("fs");
+const {cancelStaleSponsored}=require('./lib/sponsored-history');
 
 require("dotenv").config();
 
@@ -14685,6 +14686,7 @@ app.get(
         Date.now();
 
 
+      cancelStaleSponsored(db,eventId);
       const cleanupRow =
         db.prepare(`
 
@@ -14748,14 +14750,16 @@ app.get(
 
           FROM admin_commands
 
-          WHERE event_id=?
+          WHERE event_id=? AND (
+            id IN (SELECT id FROM admin_commands WHERE event_id=? ORDER BY id DESC LIMIT 200)
+            OR id IN (SELECT MAX(id) FROM admin_commands WHERE event_id=? GROUP BY router_id,mac,command_type)
+          )
 
           ORDER BY id DESC
 
-          LIMIT 200
-
+          
         `).all(
-          eventId
+          eventId,eventId,eventId
         );
 
 
@@ -16071,6 +16075,7 @@ app.get(
 
     // Antes de entregar o prÃ³ximo comando, verifica se existe
     // TEMP_ADMIN vencido e enfileira o UNBYPASS automÃ¡tico.
+    cancelStaleSponsored(db,router.event_id,router.id);
     enqueueExpiredAdminTemporaryAccess(
       router.event_id,
       router.id
@@ -18534,6 +18539,7 @@ app.post("/api/ads/access", createRateLimiter({
       return res.status(409).json({ok:false,code:"DEVICE_NOT_SEEN",error:"Aguardando a MikroTik identificar este aparelho. Tente novamente em alguns segundos."});
 
     const result=db.transaction(()=>{
+      cancelStaleSponsored(db,session.event_id,session.router_id);
       const latest=db.prepare("SELECT command_ref FROM ad_view_sessions WHERE token_hash=?").get(hash);
       if(latest.command_ref) return latest.command_ref;
       enqueueExpiredAdminTemporaryAccess(session.event_id,session.router_id);
