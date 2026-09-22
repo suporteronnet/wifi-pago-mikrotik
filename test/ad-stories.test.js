@@ -5,6 +5,27 @@ const Database=require('better-sqlite3');
 const crypto=require('crypto');
 const register=require('../lib/ad-stories');
 
+test('lead migration preserves existing sessions, dependent Stories and indexes',()=>{
+  const db=new Database(':memory:');
+  try{
+    db.exec(`CREATE TABLE events(id INTEGER PRIMARY KEY);CREATE TABLE ad_campaigns(id INTEGER PRIMARY KEY);
+      INSERT INTO events VALUES(1);INSERT INTO ad_campaigns VALUES(1);
+      CREATE TABLE ad_view_sessions(token_hash TEXT PRIMARY KEY,event_id INTEGER,router_id INTEGER,campaign_id INTEGER NOT NULL REFERENCES ad_campaigns(id) ON DELETE CASCADE,mac TEXT,created_at TEXT,expires_at TEXT,command_ref TEXT);
+      CREATE INDEX session_expiry ON ad_view_sessions(expires_at);
+      INSERT INTO ad_view_sessions VALUES('existing',1,1,1,'test','now','later',NULL);
+      CREATE TABLE ad_story_runs(token_hash TEXT PRIMARY KEY REFERENCES ad_view_sessions(token_hash) ON DELETE CASCADE,playlist TEXT,current_index INTEGER,started_at INTEGER,completed INTEGER,settings_json TEXT);
+      INSERT INTO ad_story_runs VALUES('existing','[]',0,0,0,'{}');`);
+    const options={app:express(),db,adminAuth:(req,res,next)=>next(),requireRole:()=>((req,res,next)=>next()),normalizeMac:v=>v};
+    register(options);register(options);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM ad_view_sessions').get().n,1);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM ad_story_runs').get().n,1);
+    assert.equal(db.pragma('table_info(ad_view_sessions)').find(c=>c.name==='campaign_id').notnull,0);
+    assert.equal(db.pragma('foreign_keys',{simple:true}),1);
+    assert.deepEqual(db.pragma('foreign_key_check'),[]);
+    assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE name='session_expiry'").get());
+  }finally{db.close();}
+});
+
 test('campaign albums, settings, server-side viewing gate and contacts',async t=>{
   const db=new Database(':memory:');
   db.exec(`CREATE TABLE events(id INTEGER PRIMARY KEY,event_key TEXT,name TEXT,portal_mode TEXT,status TEXT);
@@ -44,6 +65,7 @@ test('campaign albums, settings, server-side viewing gate and contacts',async t=
   assert.equal((await request('/admin/api/ad-story-campaigns','POST',{...campaign,target_url:'javascript:alert(1)'})).status,400);
   assert.equal((await request('/admin/api/ad-story-campaigns','POST',{...campaign,starts_at:'2026-01-02',ends_at:'2026-01-01'})).status,400);
   const config={...r.data.settings,email:'required',city:'optional',survey:'required',survey_question:'Feedback?',title:'Welcome',color:'#336699'};
+  delete config.fields; // Compatibility with the previous settings payload.
   assert.equal((await request('/admin/api/ad-portals/1','PUT',config)).status,200);
   assert.equal((await request('/admin/api/ad-portals/1')).data.settings.title,'Welcome');
   const start=await request('/api/ads/session','POST',{event_key:'ads',router_key:'router',mac:'02:00:00:00:00:01'},false);
@@ -82,10 +104,31 @@ test('campaign albums, settings, server-side viewing gate and contacts',async t=
   r=await request('/admin/api/ad-portals/1');assert.equal(r.data.campaigns[0].slides[0].image_path,campaign.slides[1].image_path);
   assert.equal((await request('/admin/api/ad-story-campaigns/'+id,'PUT',{...campaign,slides:[{image_path:'/invalid',duration:0}]})).status,400);
   assert.equal((await request('/admin/api/ad-portals/1')).data.campaigns[0].slides.length,2);
+  // Lead-only: no campaign, no mandatory name/phone, configurable answers.
+  db.exec("INSERT INTO routers VALUES(3,3,'lead-router','active')");
+  const leadConfig={...config,mode:'lead',fields:[{id:'opinion',label:'Sua opinião',type:'textarea',enabled:true,required:true},{id:'secret',label:'Oculto',type:'text',enabled:false,required:true}]};
+  assert.equal((await request('/admin/api/ad-portals/3','PUT',leadConfig)).status,200);
+  const lead=await request('/api/ads/session','POST',{event_key:'other',router_key:'lead-router',mac:'02:00:00:00:00:03'},false);
+  assert.equal(lead.status,200);assert.deepEqual(lead.data.playlist,[]);
+  const leadBody={token:lead.data.token,terms_accepted:true,answers:{secret:'Ignored'}};
+  assert.equal((await request('/api/ads/profile','POST',leadBody,false)).status,400);
+  leadBody.answers.opinion='Gostei';
+  assert.equal((await request('/api/ads/profile','POST',leadBody,false)).status,200);
+  const leadContact=(await request('/admin/api/ad-contacts?event_id=3')).data.contacts[0];
+  assert.equal(leadContact.phone,'');assert.deepEqual(leadContact.answers,[{id:'opinion',label:'Sua opinião',value:'Gostei'}]);
+  // Phone-only still requires completed Stories but does not require the old name field.
+  assert.equal((await request('/admin/api/ad-portals/1','PUT',{...config,mode:'ads_phone'})).status,200);
+  const phoneRun=await request('/api/ads/session','POST',{event_key:'ads',router_key:'router',mac:'02:00:00:00:00:04'},false);
+  const phoneHash=crypto.createHash('sha256').update(phoneRun.data.token).digest('hex');
+  const phoneBody={token:phoneRun.data.token,terms_accepted:true,answers:{phone:'11999990000'}};
+  assert.equal((await request('/api/ads/profile','POST',phoneBody,false)).status,409);
+  db.prepare('UPDATE ad_story_runs SET completed=1 WHERE token_hash=?').run(phoneHash);
+  assert.equal((await request('/api/ads/profile','POST',phoneBody,false)).status,200);
+  assert.equal((await request('/admin/api/ad-portals/3','PUT',{...leadConfig,fields:[]})).status,400);
   // Legacy single-image campaigns remain visible without destructive migration.
   db.prepare('INSERT INTO ad_campaigns(event_id,name,image_path) VALUES(1,?,?)').run('Legacy','/api/ad-images/legacy.jpg');
   assert.equal((await request('/admin/api/ad-portals/1')).data.campaigns.find(c=>c.name==='Legacy').slides.length,1);
   assert.equal((await request('/admin/api/ad-story-campaigns/'+id,'DELETE')).status,200);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM ad_campaign_slides WHERE campaign_id=?').get(id).n,0);
-  assert.equal((await request('/admin/api/ad-contacts?event_id=1')).data.total,1);
+  assert.equal((await request('/admin/api/ad-contacts?event_id=1')).data.total,2);
 });

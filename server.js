@@ -18528,7 +18528,7 @@ app.post("/api/ads/access", createRateLimiter({
     const router=db.prepare("SELECT status FROM routers WHERE id=? AND event_id=?").get(session.router_id,session.event_id);
     if(event?.portal_mode!=="ads" || event.status!=="active" || router?.status!=="active")
       return res.status(409).json({ok:false,error:"Este HotSpot de anúncios está indisponível"});
-    if(!activeAdCampaign(session.event_id,session.campaign_id))
+    if(session.campaign_id && !activeAdCampaign(session.event_id,session.campaign_id))
       return res.status(409).json({ok:false,error:"O anúncio não está mais ativo"});
     if(!session.command_ref && !adRouterHasClient(session.router_id,session.mac))
       return res.status(409).json({ok:false,code:"DEVICE_NOT_SEEN",error:"Aguardando a MikroTik identificar este aparelho. Tente novamente em alguns segundos."});

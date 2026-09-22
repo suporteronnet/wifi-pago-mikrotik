@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const host=document.getElementById('banners');if(!host)return;
-  const stylesheet=document.createElement('link');stylesheet.rel='stylesheet';stylesheet.href='/admin-ads-stories.css?v=20260922-contacts';document.head.append(stylesheet);
+  const stylesheet=document.createElement('link');stylesheet.rel='stylesheet';stylesheet.href='/admin-ads-stories.css?v=20260922-modes';document.head.append(stylesheet);
   const section=document.createElement('section');section.className='portal-config-console';
   section.innerHTML=`<header class="portal-config-heading"><div><span>HOTSPOT ANÚNCIOS</span><h2>Seu portal, do seu jeito</h2><p>Configure o cadastro, monte os Stories e acompanhe os visitantes.</p></div></header>
     <div class="portal-config-event"><label>Evento de anúncios<select id="adPortalEvent"><option value="">Selecione um evento</option></select></label><button type="button" id="adRefreshEvents">Atualizar eventos</button></div>
@@ -10,11 +10,9 @@
       <nav class="portal-config-tabs" aria-label="Configurações de anúncios"><button type="button" data-tab="appearance" class="selected">1. Portal e cadastro</button><button type="button" data-tab="campaigns">2. Campanhas e imagens</button><button type="button" data-tab="contacts">3. Cadastros recebidos</button></nav>
       <section data-pane="appearance" class="portal-config-box"><h3>Portal e cadastro</h3><form id="adPortalForm"><div class="portal-config-grid">
         <label>Título do portal<input name="title" maxlength="80" required></label><label>Cor principal<input name="color" type="color" required></label>
-        <label>E-mail<select name="email"><option value="hidden">Não solicitar</option><option value="optional">Opcional</option><option value="required">Obrigatório</option></select></label>
-        <label>Cidade<select name="city"><option value="hidden">Não solicitar</option><option value="optional">Opcional</option><option value="required">Obrigatório</option></select></label>
-        <label>Pesquisa<select name="survey"><option value="hidden">Não solicitar</option><option value="optional">Opcional</option><option value="required">Obrigatória</option></select></label>
-        <label>Pergunta da pesquisa<input name="survey_question" maxlength="180" required></label></div>
-        <p>Nome e telefone são obrigatórios. Receber ofertas é uma escolha do visitante.</p>
+        <label>Modo do portal<select name="mode"><option value="ads_phone">An&#250;ncios + WhatsApp</option><option value="lead">Somente pesquisa</option><option value="lead_ads">Pesquisa + an&#250;ncios</option></select></label></div>
+        <div id="portalFieldsEditor"><h3>Campos da pesquisa</h3><div id="portalFields"></div><button type="button" id="addPortalField">+ Adicionar pergunta</button></div>
+        <p id="portalModeHint"></p>
         <label>Termos de uso apresentados ao visitante<textarea name="terms" maxlength="2000" rows="4" required></textarea></label>
         <label>Texto da autorização para receber ofertas<input name="marketing_label" maxlength="250" required></label>
         <div class="portal-config-actions"><button class="primary" type="submit">Salvar portal e cadastro</button><span id="adSettingsFeedback" role="status"></span></div>
@@ -38,6 +36,16 @@
   const $=id=>document.getElementById(id),escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let eventId=0,page=1,campaigns=[],editingId=null,slides=[],saving=false,dirty=false;
   let contactRows=[];
+  let portalFields=[],loadedSettings={};
+  function renderFields(){
+    $('portalFields').innerHTML=portalFields.map((f,i)=>`<div class="portal-field-row"><label>Título<input data-field-index="${i}" data-field-key="label" value="${escape(f.label)}" maxlength="120" required></label><label>Tipo<select data-field-index="${i}" data-field-key="type">${[['text','Texto curto'],['textarea','Resposta longa'],['tel','Telefone'],['email','E-mail']].map(([v,l])=>`<option value="${v}" ${f.type===v?'selected':''}>${l}</option>`).join('')}</select></label><label>Exibir<select data-field-index="${i}" data-field-key="enabled"><option value="true" ${f.enabled?'selected':''}>Ativado</option><option value="false" ${!f.enabled?'selected':''}>Desativado</option></select></label><label>Resposta<select data-field-index="${i}" data-field-key="required"><option value="true" ${f.required?'selected':''}>Obrigatória</option><option value="false" ${!f.required?'selected':''}>Opcional</option></select></label><button type="button" data-remove-field="${i}">Remover</button></div>`).join('');
+    $('addPortalField').disabled=portalFields.length>=15;
+  }
+  function updateMode(){const phone=$('adPortalForm').elements.mode.value==='ads_phone';$('portalFieldsEditor').hidden=phone;$('portalFieldsEditor').querySelectorAll('input,select').forEach(c=>c.disabled=phone);$('portalModeHint').textContent=phone?'Stories → WhatsApp → ofertas → liberação confirmada → destino escolhido.':$('adPortalForm').elements.mode.value==='lead'?'Pesquisa → liberação. Não exige campanhas ou imagens.':'Stories → pesquisa → ofertas → liberação confirmada → destino escolhido.';}
+  $('portalFields').oninput=event=>{const {fieldIndex,fieldKey}=event.target.dataset;if(fieldIndex===undefined)return;portalFields[Number(fieldIndex)][fieldKey]=['enabled','required'].includes(fieldKey)?event.target.value==='true':event.target.value;};
+  $('portalFields').onclick=event=>{const b=event.target.closest('[data-remove-field]');if(b){portalFields.splice(Number(b.dataset.removeField),1);renderFields();}};
+  $('addPortalField').onclick=()=>{if(portalFields.length>=15)return;portalFields.push({id:'question_'+Date.now().toString(36),label:'Nova pergunta',type:'text',enabled:true,required:true});renderFields();};
+  $('adPortalForm').elements.mode.onchange=updateMode;
   const contactDialog=document.createElement('dialog');
   contactDialog.className='portal-contact-dialog';contactDialog.setAttribute('aria-labelledby','portalContactTitle');
   document.body.append(contactDialog);
@@ -53,6 +61,7 @@
     const link=whatsappLink(c.phone);
     const field=(label,value)=>`<div class="portal-contact-field"><span>${label}</span><strong>${escape(value||'Não informado')}</strong></div>`;
     contactDialog.innerHTML=`<header><h2 id="portalContactTitle">Dados do visitante</h2><button type="button" data-close-contact aria-label="Fechar dados do visitante">×</button></header><div class="portal-contact-body"><div class="portal-contact-grid">${field('Nome',c.name)}<div class="portal-contact-field"><span>Telefone / WhatsApp</span><strong>${escape(c.phone)}</strong>${link?`<a class="portal-contact-whatsapp" href="${link}" target="_blank" rel="noopener noreferrer">Abrir WhatsApp ↗</a>`:'<small>Número incompleto. Não foi possível montar o link do WhatsApp.</small>'}</div>${field('E-mail',c.email)}${field('Cidade',c.city)}${field('Cadastro recebido',new Date(c.created_at).toLocaleString('pt-BR'))}${field('Situação da liberação',accessLabel(c.access_status))}</div><h3>Cadastro no Hotspot Anúncios</h3><div class="portal-contact-field">${field('Evento',$('adPortalEvent').selectedOptions[0]?.textContent)}${field('Resposta à pesquisa',c.survey_answer)}${field('Autorização para receber ofertas',c.marketing_consent?'Autorizou':'Não autorizou')}</div></div>`;
+    if(c.answers?.length){const heading=document.createElement('h3');heading.textContent='Respostas do cadastro';contactDialog.querySelector('.portal-contact-body').append(heading);for(const answer of c.answers){const item=document.createElement('div');item.className='portal-contact-field';const label=document.createElement('span'),value=document.createElement('strong');label.textContent=answer.label;value.textContent=answer.value||'Não informado';item.append(label,value);contactDialog.querySelector('.portal-contact-body').append(item);}}
     contactDialog.showModal();
   }
   const report=(text,error=false,id='adPortalMessage')=>{$(id).textContent=text;$(id).classList.toggle('error',error);};
@@ -99,6 +108,7 @@
     discard();eventId=requested;page=1;$('adPortalContent').hidden=true;if(!requested)return;
     try{const data=await request(`/admin/api/ad-portals/${requested}`);if(requested!==eventId)return;
       for(const [key,value] of Object.entries(data.settings))if($('adPortalForm').elements[key])$('adPortalForm').elements[key].value=value;
+      loadedSettings=data.settings;portalFields=(data.settings.fields||[]).map(f=>({...f}));renderFields();updateMode();
       campaigns=data.campaigns;renderCampaigns();$('adPortalContent').hidden=false;tab('appearance');report('Evento selecionado: '+data.event.name);report('',false,'adSettingsFeedback');await contacts();
     }catch(error){report(error.message,true);}
   }
@@ -130,7 +140,7 @@
     }catch(error){report(error.message||'Falha ao salvar. Suas imagens continuam selecionadas para tentar novamente.',true,'adCampaignFeedback');}
     finally{saving=false;form.querySelectorAll('input,select,textarea,button').forEach(x=>x.disabled=false);$('adPortalEvent').disabled=false;$('adNewCampaign').disabled=false;renderSlides();}
   };
-  $('adPortalForm').onsubmit=async event=>{event.preventDefault();const button=event.currentTarget.querySelector('button'),body=Object.fromEntries(new FormData(event.currentTarget)),requested=eventId;button.disabled=true;try{await request(`/admin/api/ad-portals/${requested}`,json('PUT',body));if(requested===eventId)report('Configuração salva para as próximas visitas.',false,'adSettingsFeedback');}catch(error){report(error.message,true,'adSettingsFeedback');}finally{button.disabled=false;}};
+  $('adPortalForm').onsubmit=async event=>{event.preventDefault();const button=event.currentTarget.querySelector('button[type=submit]'),body={...loadedSettings,...Object.fromEntries(new FormData(event.currentTarget)),fields:portalFields},requested=eventId;button.disabled=true;try{await request(`/admin/api/ad-portals/${requested}`,json('PUT',body));if(requested===eventId)report('Configuração salva para as próximas visitas.',false,'adSettingsFeedback');}catch(error){report(error.message,true,'adSettingsFeedback');}finally{button.disabled=false;}};
   $('adCampaignList').onclick=async event=>{const b=event.target.closest('button');if(!b||saving)return;if(b.dataset.edit){edit(campaigns.find(c=>c.id===Number(b.dataset.edit)));return;}if(b.dataset.delete&&confirm('Excluir esta campanha e suas imagens da sequência?')){b.disabled=true;try{await request(`/admin/api/ad-story-campaigns/${b.dataset.delete}`,{method:'DELETE'});if(editingId===Number(b.dataset.delete))discard();await refreshCampaigns();report('Campanha excluída.');}catch(error){report(error.message,true);b.disabled=false;}}};
   section.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tab(b.dataset.tab));$('adPortalEvent').onchange=load;$('adRefreshEvents').onclick=events;$('adNewCampaign').onclick=()=>edit(null);$('adCancelCampaign').onclick=()=>{if(!dirty||confirm('Descartar alterações da campanha?'))discard();};$('adRefreshContacts').onclick=contacts;$('adContactsPrev').onclick=()=>{page=Math.max(1,page-1);contacts();};$('adContactsNext').onclick=()=>{page++;contacts();};
   $('adContacts').addEventListener('click',event=>{const button=event.target.closest('[data-contact-id]');if(button)showContact(Number(button.dataset.contactId));});
