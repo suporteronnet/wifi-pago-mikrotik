@@ -1,14 +1,14 @@
 (() => {
   'use strict';
   const host=document.getElementById('banners');if(!host)return;
-  const stylesheet=document.createElement('link');stylesheet.rel='stylesheet';stylesheet.href='/admin-ads-stories.css?v=20260922-tabs';document.head.append(stylesheet);
-  const section=document.createElement('section');section.className='ads-console';
-  section.innerHTML=`<header class="ads-heading"><div><span>HOTSPOT ANÚNCIOS</span><h2>Seu portal, do seu jeito</h2><p>Configure o cadastro, monte os Stories e acompanhe os visitantes.</p></div></header>
-    <div class="ads-event"><label>Evento de anúncios<select id="adPortalEvent"><option value="">Selecione um evento</option></select></label><button type="button" id="adRefreshEvents">Atualizar eventos</button></div>
+  const stylesheet=document.createElement('link');stylesheet.rel='stylesheet';stylesheet.href='/admin-ads-stories.css?v=20260922-panels2';document.head.append(stylesheet);
+  const section=document.createElement('section');section.className='portal-config-console';
+  section.innerHTML=`<header class="portal-config-heading"><div><span>HOTSPOT ANÚNCIOS</span><h2>Seu portal, do seu jeito</h2><p>Configure o cadastro, monte os Stories e acompanhe os visitantes.</p></div></header>
+    <div class="portal-config-event"><label>Evento de anúncios<select id="adPortalEvent"><option value="">Selecione um evento</option></select></label><button type="button" id="adRefreshEvents">Atualizar eventos</button></div>
     <div id="adPortalMessage" role="status" aria-live="polite"></div>
     <div id="adPortalContent" hidden>
-      <nav class="ads-tabs" aria-label="Configurações de anúncios"><button type="button" data-tab="appearance" class="selected">1. Portal e cadastro</button><button type="button" data-tab="campaigns">2. Campanhas e imagens</button><button type="button" data-tab="contacts">3. Cadastros recebidos</button></nav>
-      <section data-pane="appearance" class="ads-box"><h3>Portal e cadastro</h3><form id="adPortalForm"><div class="ads-grid">
+      <nav class="portal-config-tabs" aria-label="Configurações de anúncios"><button type="button" data-tab="appearance" class="selected">1. Portal e cadastro</button><button type="button" data-tab="campaigns">2. Campanhas e imagens</button><button type="button" data-tab="contacts">3. Cadastros recebidos</button></nav>
+      <section data-pane="appearance" class="portal-config-box"><h3>Portal e cadastro</h3><form id="adPortalForm"><div class="portal-config-grid">
         <label>Título do portal<input name="title" maxlength="80" required></label><label>Cor principal<input name="color" type="color" required></label>
         <label>E-mail<select name="email"><option value="hidden">Não solicitar</option><option value="optional">Opcional</option><option value="required">Obrigatório</option></select></label>
         <label>Cidade<select name="city"><option value="hidden">Não solicitar</option><option value="optional">Opcional</option><option value="required">Obrigatório</option></select></label>
@@ -17,18 +17,18 @@
         <p>Nome e telefone são obrigatórios. Receber ofertas é uma escolha do visitante.</p>
         <label>Termos de uso apresentados ao visitante<textarea name="terms" maxlength="2000" rows="4" required></textarea></label>
         <label>Texto da autorização para receber ofertas<input name="marketing_label" maxlength="250" required></label>
-        <div class="ads-actions"><button class="primary" type="submit">Salvar portal e cadastro</button><span id="adSettingsFeedback" role="status"></span></div>
+        <div class="portal-config-actions"><button class="primary" type="submit">Salvar portal e cadastro</button><span id="adSettingsFeedback" role="status"></span></div>
       </form></section>
-      <section data-pane="campaigns" hidden><div class="ads-box"><div class="ads-row"><div><h3>Campanhas e imagens</h3><p>Cada campanha pode ter até 20 imagens. A ordem das campanhas e das imagens define a sequência dos Stories.</p></div><button id="adNewCampaign" type="button" class="primary">+ Nova campanha</button></div><div id="adCampaignList"></div></div>
-        <section id="adCampaignEditor" class="ads-box" hidden><h3 id="adCampaignEditorTitle">Nova campanha</h3><form id="adCampaignForm"><div class="ads-grid">
+      <section data-pane="campaigns" hidden><div class="portal-config-box"><div class="portal-config-row"><div><h3>Campanhas e imagens</h3><p>Cada campanha pode ter até 20 imagens. A ordem das campanhas e das imagens define a sequência dos Stories.</p></div><button id="adNewCampaign" type="button" class="primary">+ Nova campanha</button></div><div id="adCampaignList"></div></div>
+        <section id="adCampaignEditor" class="portal-config-box" hidden><h3 id="adCampaignEditorTitle">Nova campanha</h3><form id="adCampaignForm"><div class="portal-config-grid">
           <label>Nome da campanha<input name="name" maxlength="100" required></label><label>Link do anunciante (opcional)<input name="target_url" type="url" placeholder="https://..."></label>
           <label>Ordem da campanha<input name="position" type="number" min="0" max="999" value="0" required></label><label>Situação<select name="active"><option value="true">Ativa</option><option value="false">Inativa</option></select></label>
           <label>Início (opcional)<input name="starts_at" type="datetime-local"></label><label>Fim (opcional)<input name="ends_at" type="datetime-local"></label>
-        </div><div class="ads-upload"><label>Selecionar imagens — pode escolher várias de uma vez<input id="adCampaignFiles" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><p>JPG, PNG ou WebP, até 900 KB por imagem. Para Stories, prefira imagens verticais. As imagens existentes continuam disponíveis para edição.</p></div>
-        <div id="adSlideList" class="ads-slide-grid"></div><p id="adSlideCount"></p><div id="adCampaignFeedback" role="status"></div>
-        <div class="ads-actions"><button type="submit" class="primary" id="adSaveCampaign">Salvar campanha e imagens</button><button type="button" id="adCancelCampaign">Cancelar</button></div></form></section>
+        </div><div class="portal-config-upload"><label>Selecionar imagens — pode escolher várias de uma vez<input id="adCampaignFiles" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><p>JPG, PNG ou WebP, até 900 KB por imagem. Para Stories, prefira imagens verticais. As imagens existentes continuam disponíveis para edição.</p></div>
+        <div id="adSlideList" class="portal-config-slide-grid"></div><p id="adSlideCount"></p><div id="adCampaignFeedback" role="status"></div>
+        <div class="portal-config-actions"><button type="submit" class="primary" id="adSaveCampaign">Salvar campanha e imagens</button><button type="button" id="adCancelCampaign">Cancelar</button></div></form></section>
       </section>
-      <section data-pane="contacts" class="ads-box" hidden><div class="ads-row"><h3>Cadastros deste evento</h3><button id="adRefreshContacts" type="button">Atualizar cadastros</button></div><div class="ads-table" id="adContacts"></div><div class="ads-actions"><button id="adContactsPrev" type="button">Anterior</button><span id="adContactsPage"></span><button id="adContactsNext" type="button">Próxima</button></div></section>
+      <section data-pane="contacts" class="portal-config-box" hidden><div class="portal-config-row"><h3>Cadastros deste evento</h3><button id="adRefreshContacts" type="button">Atualizar cadastros</button></div><div class="portal-config-table" id="adContacts"></div><div class="portal-config-actions"><button id="adContactsPrev" type="button">Anterior</button><span id="adContactsPage"></span><button id="adContactsNext" type="button">Próxima</button></div></section>
     </div>`;
   host.replaceChildren(section);
   const $=id=>document.getElementById(id),escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -54,10 +54,10 @@
   function localDate(value){if(!value)return '';const d=new Date(value);if(!Number.isFinite(d.getTime()))return '';const pad=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;}
   function discard(){slides.forEach(s=>{if(s.preview)URL.revokeObjectURL(s.preview);});slides=[];editingId=null;dirty=false;$('adCampaignEditor').hidden=true;}
   function renderCampaigns(){
-    $('adCampaignList').innerHTML=campaigns.length?campaigns.map(c=>`<article class="ads-campaign"><div class="ads-thumbs">${c.slides.slice(0,4).map(s=>`<img src="${escape(s.image_path)}" alt="">`).join('')}</div><div class="ads-campaign-info"><h4>${escape(c.name)}</h4><p>${c.slides.length} imagem(ns) • ${c.slides.reduce((sum,s)=>sum+s.duration,0)} segundos • Ordem ${c.position}</p><span class="ads-badge">${c.active?'Ativa':'Inativa'}${c.starts_at?' • Início '+escape(new Date(c.starts_at).toLocaleString('pt-BR')):''}${c.ends_at?' • Fim '+escape(new Date(c.ends_at).toLocaleString('pt-BR')):''}</span></div><div class="ads-actions"><button type="button" data-edit="${c.id}">Editar imagens e dados</button><button type="button" data-delete="${c.id}" class="danger">Excluir campanha</button></div></article>`).join(''):'<p class="ads-empty">Nenhuma campanha neste evento. Clique em Nova campanha e selecione as imagens.</p>';
+    $('adCampaignList').innerHTML=campaigns.length?campaigns.map(c=>`<article class="portal-config-campaign"><div class="portal-config-thumbs">${c.slides.slice(0,4).map(s=>`<img src="${escape(s.image_path)}" alt="">`).join('')}</div><div class="portal-config-campaign-info"><h4>${escape(c.name)}</h4><p>${c.slides.length} imagem(ns) • ${c.slides.reduce((sum,s)=>sum+s.duration,0)} segundos • Ordem ${c.position}</p><span class="portal-config-badge">${c.active?'Ativa':'Inativa'}${c.starts_at?' • Início '+escape(new Date(c.starts_at).toLocaleString('pt-BR')):''}${c.ends_at?' • Fim '+escape(new Date(c.ends_at).toLocaleString('pt-BR')):''}</span></div><div class="portal-config-actions"><button type="button" data-edit="${c.id}">Editar imagens e dados</button><button type="button" data-delete="${c.id}" class="danger">Excluir campanha</button></div></article>`).join(''):'<p class="portal-config-empty">Nenhuma campanha neste evento. Clique em Nova campanha e selecione as imagens.</p>';
   }
   function renderSlides(){
-    $('adSlideList').innerHTML=slides.map((s,i)=>`<article class="ads-slide"><img src="${escape(s.preview||s.image_path)}" alt="Story ${i+1}"><div><strong>Story ${i+1}</strong><label>Duração em segundos<input type="number" min="3" max="30" value="${s.duration}" data-duration="${i}" required></label><div class="ads-actions"><button type="button" data-up="${i}" ${i===0?'disabled':''} aria-label="Mover Story ${i+1} para antes">↑</button><button type="button" data-down="${i}" ${i===slides.length-1?'disabled':''} aria-label="Mover Story ${i+1} para depois">↓</button><button type="button" data-remove="${i}" class="danger">Remover</button></div></div></article>`).join('');
+    $('adSlideList').innerHTML=slides.map((s,i)=>`<article class="portal-config-slide"><img src="${escape(s.preview||s.image_path)}" alt="Story ${i+1}"><div><strong>Story ${i+1}</strong><label>Duração em segundos<input type="number" min="3" max="30" value="${s.duration}" data-duration="${i}" required></label><div class="portal-config-actions"><button type="button" data-up="${i}" ${i===0?'disabled':''} aria-label="Mover Story ${i+1} para antes">↑</button><button type="button" data-down="${i}" ${i===slides.length-1?'disabled':''} aria-label="Mover Story ${i+1} para depois">↓</button><button type="button" data-remove="${i}" class="danger">Remover</button></div></div></article>`).join('');
     $('adSlideCount').textContent=`${slides.length} de 20 imagens selecionadas`;
   }
   function edit(campaign){
@@ -79,7 +79,7 @@
   }
   async function contacts(){const requested=eventId,requestedPage=page;if(!requested)return;try{const data=await request(`/admin/api/ad-contacts?event_id=${requested}&page=${requestedPage}`);if(requested!==eventId||requestedPage!==page)return;
     const rows=data.contacts.map(c=>`<tr><td>${escape(c.name)}</td><td>${escape(c.phone)}</td><td>${escape(c.email||'—')}</td><td>${escape(c.city||'—')}</td><td>${escape(c.survey_answer||'—')}</td><td>${c.marketing_consent?'Autorizou':'Não autorizou'}</td><td>${c.access_status==='applied'?'Confirmado':c.access_status==='pending'?'Aguardando MikroTik':'Cadastro recebido'}</td><td>${escape(new Date(c.created_at).toLocaleString('pt-BR'))}</td></tr>`).join('');
-    $('adContacts').innerHTML=rows?`<table><thead><tr><th>Nome</th><th>Telefone</th><th>E-mail</th><th>Cidade</th><th>Pesquisa</th><th>Ofertas</th><th>Liberação</th><th>Cadastro</th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="ads-empty">Nenhum cadastro recebido neste evento.</p>';
+    $('adContacts').innerHTML=rows?`<table><thead><tr><th>Nome</th><th>Telefone</th><th>E-mail</th><th>Cidade</th><th>Pesquisa</th><th>Ofertas</th><th>Liberação</th><th>Cadastro</th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="portal-config-empty">Nenhum cadastro recebido neste evento.</p>';
     $('adContactsPage').textContent=`Página ${page} • ${data.total} cadastros`;$('adContactsPrev').disabled=page<=1;$('adContactsNext').disabled=page*50>=data.total;
   }catch(error){report(error.message,true);}}
   $('adCampaignFiles').onchange=event=>{
