@@ -9,10 +9,20 @@
   }catch{status.textContent='Oferta inválida. Volte ao portal e escolha novamente.';return;}
   // The bearer token remains in the fragment, never in HTTP query logs or referrers.
   let checking=false;
+  const authorize=params.get('authorize')==='1';
+  const captive=/Android.*; wv\)|Android.*Version\/4\.0|(?:iPhone|iPad|iPod)(?![\s\S]*Safari\/)/i.test(navigator.userAgent);
   async function check(){
     if(checking)return;checking=true;retry.hidden=true;
     const deadline=Date.now()+120000;
     try{
+      if(authorize){
+        const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);
+        try{
+          const response=await fetch('/api/ads/access',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token}),signal:controller.signal,cache:'no-store'});
+          const data=await response.json();
+          if(!response.ok||!data.ok)throw new Error(data.error||'Não foi possível solicitar o acesso. Tente novamente.');
+        }finally{clearTimeout(timeout);}
+      }
       while(Date.now()<deadline){
         const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),4000);
         let data;
@@ -40,5 +50,15 @@
     finally{checking=false;}
   }
   retry.onclick=check;
-  check();
+  if(authorize&&captive){
+    document.getElementById('title').textContent='Continue no navegador';
+    status.textContent='A oferta está selecionada. Seu acesso será solicitado no navegador, para esta janela não interromper a abertura.';
+    document.getElementById('browserHelp').hidden=false;
+    const field=document.getElementById('browserUrl');field.value=location.href;
+    document.getElementById('copyUrl').onclick=async()=>{
+      try{await navigator.clipboard.writeText(location.href);status.textContent='Endereço copiado. Cole no Safari ou Chrome.';}
+      catch{field.focus();field.select();status.textContent='Copie o endereço selecionado e cole no navegador.';}
+    };
+    document.getElementById('browserReady').onclick=()=>{document.getElementById('browserHelp').hidden=true;check();};
+  }else check();
 })();

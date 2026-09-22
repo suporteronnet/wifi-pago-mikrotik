@@ -4,12 +4,12 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const source=fs.readFileSync(require.resolve('../public/ads-destination.js'),'utf8');
 
-async function run(destination,states){
-  const elements=Object.fromEntries(['status','destination','retry','title'].map(id=>[id,{hidden:true}]));
+async function run(destination,states,userAgent="Chrome",authorize=false){
+  const elements=Object.fromEntries(['status','destination','retry','title','browserHelp','browserUrl','copyUrl','browserReady'].map(id=>[id,{hidden:true}]));
   const redirects=[],requests=[];let cleared=false;
-  const context={URL,URLSearchParams,AbortController,Date,Error,
+  const context={navigator:{userAgent},URL,URLSearchParams,AbortController,Date,Error,
     document:{getElementById:id=>elements[id]},
-    location:{hash:'#'+new URLSearchParams({token:'a'.repeat(64),destination}),pathname:'/ads-destination.html',replace:value=>redirects.push(value)},
+    location:{hash:'#'+new URLSearchParams({token:'a'.repeat(64),destination,authorize:authorize?'1':'0'}),pathname:'/ads-destination.html',replace:value=>redirects.push(value)},
     history:{replaceState:()=>{cleared=true;}},
     setTimeout:(fn,ms)=>{if(ms===1000)queueMicrotask(fn);return 1;},clearTimeout:()=>{},
     fetch:async(path,options)=>{requests.push({path,body:JSON.parse(options.body)});const state=states.shift();assert.ok(state,'unexpected poll');if(state instanceof Error)throw state;return {ok:true,status:200,json:async()=>({ok:true,status:state})};}
@@ -41,4 +41,13 @@ test('unsafe destinations cannot open or start polling',async()=>{
   const result=await run('javascript:alert(1)',[]);
   assert.deepEqual(result.redirects,[]);
   assert.equal(result.requests.length,0);
+});
+
+test('captive browser must not request access before browser handoff',async()=>{
+  for(const agent of ['Mozilla/5.0 (Linux; Android 13; Phone; wv) Version/4.0 Chrome/120','Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) AppleWebKit/605 Mobile/15']){
+    const result=await run('https://wa.me/5569999999999',[],agent,true);
+    assert.equal(result.requests.length,0);
+    assert.equal(result.elements.browserHelp.hidden,false);
+    assert.deepEqual(result.redirects,[]);
+  }
 });

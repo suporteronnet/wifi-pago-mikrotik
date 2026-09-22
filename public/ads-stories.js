@@ -12,6 +12,11 @@
     $('connect').disabled=!form.checkValidity();
     phone.parentElement.classList.toggle('phone-valid',/^\d{10,15}$/.test(value));
   }
+  function renderPause(){
+    $('pause').innerHTML=paused?'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 11 7-11 7Z" fill="currentColor"/></svg>':'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>';
+    $('pause').setAttribute('aria-pressed',String(paused));
+    $('pause').setAttribute('aria-label',paused?'Continuar Story':'Pausar Story');
+  }
   const interests=new Set(),sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   const message=(text,error=false)=>{$('message').textContent=text;$('message').classList.toggle('error',error);};
   const url=value=>{if(!value)return '';try{const u=new URL(value,location.origin);return ['http:','https:'].includes(u.protocol)?u.href:'';}catch{return '';}};
@@ -57,7 +62,7 @@
   async function showStory(){
     step('story');
     $('pause').setAttribute('aria-pressed','false');
-    clearInterval(timer);ready=false;elapsed=0;paused=false;$('pause').textContent='Pausar';
+    clearInterval(timer);ready=false;elapsed=0;paused=false;renderPause();
     $('storyImage').hidden=true;$('storyLoading').hidden=false;
     $('storyOverlay').hidden=true;
     const story=playlist[index];$('storyCount').textContent=`${index+1} DE ${playlist.length}`;
@@ -85,10 +90,10 @@
     catch(error){message(error.status?error.message:'A conexão oscilou. Toque para continuar.',true);$('nextStory').disabled=false;$('nextStory').textContent='Tentar continuar';if(!ready)$('restart').hidden=false;}
     finally{advancing=false;}
   }
-  $('pause').onclick=()=>{paused=!paused;$('pause').textContent=paused?'Continuar':'Pausar';$('pause').setAttribute('aria-pressed',String(paused));$('pause').setAttribute('aria-label',paused?'Continuar Story':'Pausar Story');};$('nextStory').onclick=advance;
+  $('pause').onclick=()=>{paused=!paused;renderPause();$('pause').setAttribute('aria-pressed',String(paused));$('pause').setAttribute('aria-label',paused?'Continuar Story':'Pausar Story');};$('nextStory').onclick=advance;
   function openAdvertiser(event){
     if(!event.currentTarget.getAttribute('href')){event.preventDefault();return;}
-    paused=true;$('pause').textContent='Continuar';
+    paused=true;renderPause();
     interests.add(playlist[index].id);
     fetch(`/api/ad-campaigns/${playlist[index].id}/click`,{method:'POST',keepalive:true}).catch(()=>{});
     message('Story pausado. Ao voltar, toque em Continuar.');
@@ -111,14 +116,11 @@
   $('skipOffers').onclick=()=>connectAccess();
   async function connectAccess(destination='',campaignId=null){
     if(connecting||!profileSaved)return;connecting=true;$('connect').disabled=true;$('connect').textContent='Solicitando acesso…';
-    // Reserve the browsing context during the actual tap, before asynchronous
-    // authorization loses user activation. The waiting page independently checks
-    // the ACK if Android closes the captive portal after granting connectivity.
-    let destinationWindow=null;
-    if(destination&&/Android/i.test(navigator.userAgent)){
+    if(destination&&/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){
       const handoff=new URL('/ads-destination.html',location.origin);
-      handoff.hash=new URLSearchParams({token,destination}).toString();
-      try{destinationWindow=window.open(handoff.href,'_blank');}catch{}
+      handoff.hash=new URLSearchParams({token,destination,authorize:'1'}).toString();
+      location.assign(handoff.href);
+      return;
     }
     $('offerScreen').querySelectorAll('button').forEach(b=>b.disabled=true);
     const previousScreen=$('offerScreen').hidden?'profile':'offers';
@@ -139,8 +141,7 @@
           if(campaignId)fetch(`/api/ad-campaigns/${campaignId}/click`,{method:'POST',keepalive:true}).catch(()=>{});
           for(const story of [...new Map(playlist.filter(s=>interests.has(s.id)&&url(s.target_url)).map(s=>[s.id,s])).values()]){const a=document.createElement('a');a.textContent='Conhecer '+story.name;a.href=url(story.target_url);a.target='_blank';a.rel='noopener noreferrer';a.onclick=()=>fetch(`/api/ad-campaigns/${story.id}/click`,{method:'POST',keepalive:true}).catch(()=>{});$('offers').append(a);}
           message('Internet liberada. Abrindo a navegação…');
-          if(!destinationWindow||destinationWindow.closed)location.replace($('continue').href);
-          else message('Internet liberada. O destino está sendo aberto na outra janela.');
+          location.replace($('continue').href);
           return;
         }
         if(state.status==='expired')throw new Error('O tempo de acesso terminou. Reabra o portal para ver novos anúncios.');
@@ -148,7 +149,7 @@
         await sleep(1000);
       }
       throw new Error('A confirmação ainda não chegou. Tente liberar novamente.');
-    }catch(error){try{destinationWindow?.close();}catch{}$('connectingScreen').hidden=true;$(previousScreen==='offers'?'offerScreen':'profileScreen').hidden=false;step(previousScreen);message(error.name==='AbortError'?'A conexão demorou. Tente novamente.':error.message,true);$('connect').disabled=false;$('connect').textContent='Tentar liberar novamente';}
+    }catch(error){$('connectingScreen').hidden=true;$(previousScreen==='offers'?'offerScreen':'profileScreen').hidden=false;step(previousScreen);message(error.name==='AbortError'?'A conexão demorou. Tente novamente.':error.message,true);$('connect').disabled=false;$('connect').textContent='Tentar liberar novamente';}
     finally{connecting=false;$('offerScreen').querySelectorAll('button').forEach(b=>b.disabled=false);}
   }
   $('profileForm').addEventListener('submit',async event=>{
