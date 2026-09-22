@@ -17,18 +17,18 @@
   }
   async function showStory(){
     clearInterval(timer);ready=false;elapsed=0;paused=false;$('pause').textContent='Pausar';
-    const story=playlist[index];$('storyCount').textContent=`${index+1} DE ${playlist.length}`;$('storyTitle').textContent=story.name;
-    $('storyHelp').textContent='Veja os anúncios para continuar até o cadastro.';$('nextStory').disabled=true;$('nextStory').textContent='Carregando imagem…';$('interest').hidden=!url(story.target_url);
+    const story=playlist[index];$('storyCount').textContent=`${index+1} DE ${playlist.length}`;
+    $('nextStory').disabled=true;$('nextStory').textContent='Carregando imagem…';$('interest').hidden=true;
     $('interest').textContent=interests.has(story.id)?'Interesse salvo ✓':'Me interessa';
     $('progress').replaceChildren(...playlist.map((_,i)=>{const bar=document.createElement('span'),fill=document.createElement('i');fill.style.width=i<index?'100%':'0';bar.append(fill);return bar;}));
     await new Promise((resolve,reject)=>{const img=$('storyImage'),handle=setTimeout(()=>reject(new Error('A imagem não carregou. Tente reabrir o portal.')),12000);img.onload=()=>{clearTimeout(handle);resolve();};img.onerror=()=>{clearTimeout(handle);reject(new Error('Imagem indisponível. Avise o responsável pelo Wi-Fi.'));};img.src=url(story.image_path);});
-    ready=true;message('Anúncio em exibição.');let last=performance.now();
-    timer=setInterval(()=>{const now=performance.now(),delta=Math.min(250,now-last);last=now;if(paused||document.hidden||!ready)return;elapsed+=delta;$('progress').children[index].firstChild.style.width=Math.min(100,elapsed/(story.duration*10))+'%';const remaining=Math.max(0,Math.ceil(story.duration-elapsed/1000));$('nextStory').textContent=remaining?`Aguarde ${remaining}s…`:(index===playlist.length-1?'Continuar para cadastro':'Próximo anúncio');if(!remaining){$('nextStory').disabled=false;clearInterval(timer);advance();}},100);
+    ready=true;message('');let last=performance.now();
+    timer=setInterval(()=>{const now=performance.now(),delta=Math.min(250,now-last);last=now;if(paused||document.hidden||!ready)return;elapsed+=delta;$('interest').hidden=!url(story.target_url)||elapsed<story.duration*500;$('progress').children[index].firstChild.style.width=Math.min(100,elapsed/(story.duration*10))+'%';const remaining=Math.max(0,Math.ceil(story.duration-elapsed/1000));$('nextStory').textContent=remaining?`${remaining}s`:(index===playlist.length-1?'Continuar para cadastro':'Próximo anúncio');if(!remaining){$('nextStory').disabled=false;clearInterval(timer);advance();}},100);
   }
   async function advance(){
     if(advancing||!ready||elapsed<playlist[index].duration*1000)return;
     advancing=true;$('nextStory').disabled=true;
-    try{const result=await post('/api/ads/story-next',{token,index});if(result.completed){$('storyScreen').hidden=true;$('profileScreen').hidden=false;message('Preencha seus dados para liberar o acesso.');$('profileForm').elements.name.focus();}else{index=result.index;await showStory();}}
+    try{const result=await post('/api/ads/story-next',{token,index});if(result.completed){$('storyScreen').hidden=true;$('profileScreen').hidden=false;message('Preencha seus dados para liberar o acesso.');}else{index=result.index;await showStory();}}
     catch(error){message(error.status?error.message:'A conexão oscilou. Toque para continuar.',true);$('nextStory').disabled=false;$('nextStory').textContent='Tentar continuar';if(!ready)$('restart').hidden=false;}
     finally{advancing=false;}
   }
@@ -41,8 +41,8 @@
       const form=event.currentTarget,body={token};for(const key of ['name','phone','email','city','survey'])body[key]=form.elements[key].value;
       body.terms_accepted=form.elements.terms_accepted.checked;body.marketing_consent=form.elements.marketing_consent.checked;
       await post('/api/ads/profile',body);await post('/api/ads/access',{token});message('Aguardando a MikroTik confirmar seu acesso…');
-      for(let attempt=0;attempt<45;attempt++){
-        let state;try{state=await post('/api/ads/status',{token},6000);}catch(error){if(error.status&&error.status<500&&error.status!==429)throw error;message('A conexão mudou. Verificando novamente…');await sleep(2000);continue;}
+      for(let attempt=0;attempt<90;attempt++){
+        let state;try{state=await post('/api/ads/status',{token},6000);}catch(error){if(error.status&&error.status<500&&error.status!==429)throw error;message('A conexão mudou. Verificando novamente…');await sleep(1000);continue;}
         if(state.status==='applied'){
           $('profileScreen').hidden=true;$('successScreen').hidden=false;message('Internet liberada.');
           const dest=params.get('linkOrig');$('continue').href=dest&&url(dest)?url(dest):'http://neverssl.com/';
@@ -50,7 +50,7 @@
           return;
         }
         if(state.status==='expired')throw new Error('O tempo de acesso terminou. Reabra o portal para ver novos anúncios.');
-        await sleep(2000);
+        await sleep(1000);
       }
       throw new Error('A confirmação ainda não chegou. Tente liberar novamente.');
     }catch(error){message(error.name==='AbortError'?'A conexão demorou. Tente novamente.':error.message,true);$('connect').disabled=false;$('connect').textContent='Tentar liberar novamente';}

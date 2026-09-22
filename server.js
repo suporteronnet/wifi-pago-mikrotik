@@ -19464,6 +19464,17 @@ app.get(
   }
 );
 
+// Escolhe o portal antes de enviar o HTML, evitando exibir o PIX em eventos de anúncios.
+app.get(["/", "/index.html"], (req, res, next) => {
+  const eventKey = String(req.query.event_key || req.query.event || "").trim();
+  if (!eventKey) return next();
+  const event = db.prepare("SELECT portal_mode FROM events WHERE event_key=?").get(eventKey);
+  if (event?.portal_mode !== "ads") return next();
+  res.setHeader("Cache-Control", "no-store");
+  const query = req.originalUrl.includes("?") ? req.originalUrl.slice(req.originalUrl.indexOf("?")) : "";
+  return res.redirect(302, "/anuncios.html" + query);
+});
+
 app.use(
   express.static(path.join(__dirname, "public"))
 );

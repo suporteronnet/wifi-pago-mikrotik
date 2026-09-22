@@ -1,14 +1,15 @@
 <!doctype html>
 <html lang="pt-BR">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101827"><title>Wi-Fi grátis</title><link rel="stylesheet" href="/ads-stories.css"><script src="/ads-stories.js" defer></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#101827"><title>WI-FI TOTAL</title><link rel="stylesheet" href="/ads-stories.css?v=20260922-clean"><script src="/ads-stories.js?v=20260922-clean" defer></script></head>
 <body><main>
-  <section id="storyScreen" aria-label="Anúncios do Wi-Fi">
-    <img id="storyImage" alt="Anúncio do estabelecimento"><div class="shade"></div>
-    <div class="story-top"><div id="progress" aria-label="Progresso dos anúncios"></div><div class="story-toolbar"><span>WI-FI • ACESSO PATROCINADO</span><button id="pause" type="button" aria-label="Pausar anúncio">Pausar</button></div></div>
-    <div class="story-bottom"><span id="storyCount"></span><h1 id="storyTitle">Preparando seu acesso</h1><p id="storyHelp">Carregando os anúncios deste Wi-Fi…</p><button id="interest" type="button" hidden>Me interessa</button><button id="nextStory" type="button" disabled>Carregando…</button></div>
+  <header class="portal-brand"><img src="/wifi-total-brand.svg" alt="WI-FI TOTAL" width="280" height="51"></header>
+  <section id="storyScreen" aria-label="Stories">
+    <div class="story-top"><div id="progress" aria-label="Progresso dos Stories"></div><div class="story-toolbar"><span id="storyCount"></span><button id="pause" type="button" aria-label="Pausar Story">Pausar</button></div></div>
+    <div class="story-media"><img id="storyImage" alt="Anúncio do estabelecimento"><button id="interest" type="button" hidden>Me interessa ↗</button></div>
+    <div class="story-bottom"><button id="nextStory" type="button" disabled>Carregando…</button></div>
   </section>
   <section id="profileScreen" class="card" hidden>
-    <span class="eyebrow">SÓ MAIS UM PASSO</span><h1 id="portalTitle">Internet grátis</h1><p>Identifique-se para liberar seu acesso ao Wi-Fi.</p>
+    <span class="eyebrow">SÓ MAIS UM PASSO</span><h1 id="portalTitle">Internet grátis</h1><p>Falta pouco para navegar. Preencha seus dados abaixo.</p>
     <form id="profileForm">
       <label>Nome completo<input name="name" autocomplete="name" minlength="2" maxlength="100" required></label>
       <label>Telefone com DDD<input name="phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="25" placeholder="(00) 00000-0000" required></label>
@@ -18,7 +19,7 @@
       <details><summary>Termos de uso da rede</summary><p id="termsText"></p></details>
       <label class="check"><input name="terms_accepted" type="checkbox" required><span>Li e aceito os termos de uso.</span></label>
       <label class="check"><input name="marketing_consent" type="checkbox"><span id="marketingText"></span></label>
-      <button id="connect" type="submit">Liberar minha internet</button>
+      <button id="connect" type="submit">CONECTAR E NAVEGAR →</button>
     </form>
   </section>
   <section id="successScreen" class="card" hidden><span class="success-icon">✓</span><h1>Acesso liberado!</h1><p>Você já pode navegar. Seu tempo de acesso é controlado por este Wi-Fi.</p><a id="continue" class="button" href="http://neverssl.com/">Continuar navegando</a><div id="offers"></div></section>

@@ -20109,7 +20109,7 @@ function buildGeneratedHotspotLogin(
 
 <div class="box">
 
-  <h1>${adsOnly ? "Wi-Fi grátis" : "Wi-Fi Pago"}</h1>
+  ${adsOnly ? '<div style="display:flex;align-items:center;justify-content:center;gap:10px;color:#ff850c;font:bold 28px Arial"><svg width="44" height="44" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" aria-hidden="true"><path d="M6.5 17.5c9.8-9.1 25.2-9.1 35 0M12.5 24c6.4-5.9 16.6-5.9 23 0M18.5 30.5c3.1-2.8 7.9-2.8 11 0"/><circle cx="24" cy="37" r="3" fill="white" stroke="none"/></svg>WI-FI TOTAL</div>' : '<h1>Wi-Fi Pago</h1>'}
 
   <p>
     ${adsOnly ? "Abrindo o portal de anúncios..." : "Preparando sua página de pagamento..."}
@@ -20186,7 +20186,7 @@ function buildGeneratedHotspotLogin(
         destino
       );
     },
-    1200
+    ${adsOnly ? 100 : 1200}
   );
 
 <\/script>
