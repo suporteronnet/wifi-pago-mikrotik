@@ -18479,7 +18479,6 @@ app.get("/api/portal-config", (req,res)=>{
   } catch(error){ return res.status(500).json({ok:false,portal_mode:"pix"}); }
 });
 
-const AD_VIEW_SECONDS = 8;
 const adStories = require('./lib/ad-stories')({app,db,adminAuth,requireRole,normalizeMac,adRouterHasClient});
 
 function activeAdCampaign(eventId, campaignId) {
@@ -18525,15 +18524,13 @@ app.post("/api/ads/access", createRateLimiter({
     if(!session || Date.parse(session.expires_at)<=Date.now()) return res.status(410).json({ok:false,error:"Anúncio expirado. Abra o portal novamente."});
     const storyError=adStories.validateAccess(session);
     if(storyError)return res.status(409).json({ok:false,error:storyError});
-    if(!session.command_ref && Date.now()-Date.parse(session.created_at)<AD_VIEW_SECONDS*1000)
-      return res.status(425).json({ok:false,error:"Aguarde o anúncio terminar"});
     const event=db.prepare("SELECT portal_mode,ads_free_minutes,status FROM events WHERE id=?").get(session.event_id);
     const router=db.prepare("SELECT status FROM routers WHERE id=? AND event_id=?").get(session.router_id,session.event_id);
     if(event?.portal_mode!=="ads" || event.status!=="active" || router?.status!=="active")
       return res.status(409).json({ok:false,error:"Este HotSpot de anúncios está indisponível"});
     if(!activeAdCampaign(session.event_id,session.campaign_id))
       return res.status(409).json({ok:false,error:"O anúncio não está mais ativo"});
-    if(!adRouterHasClient(session.router_id,session.mac))
+    if(!session.command_ref && !adRouterHasClient(session.router_id,session.mac))
       return res.status(409).json({ok:false,error:"Aguardando a MikroTik identificar este aparelho. Tente novamente em alguns segundos."});
 
     const result=db.transaction(()=>{

@@ -46,7 +46,7 @@
         if(state.status==='applied'){
           $('profileScreen').hidden=true;$('successScreen').hidden=false;message('Internet liberada.');
           const dest=params.get('linkOrig');$('continue').href=dest&&url(dest)?url(dest):'http://neverssl.com/';
-          for(const story of playlist.filter(s=>interests.has(s.id)&&url(s.target_url))){const a=document.createElement('a');a.textContent='Conhecer '+story.name;a.href=url(story.target_url);a.target='_blank';a.rel='noopener noreferrer';a.onclick=()=>fetch(`/api/ad-campaigns/${story.id}/click`,{method:'POST',keepalive:true}).catch(()=>{});$('offers').append(a);}
+          for(const story of [...new Map(playlist.filter(s=>interests.has(s.id)&&url(s.target_url)).map(s=>[s.id,s])).values()]){const a=document.createElement('a');a.textContent='Conhecer '+story.name;a.href=url(story.target_url);a.target='_blank';a.rel='noopener noreferrer';a.onclick=()=>fetch(`/api/ad-campaigns/${story.id}/click`,{method:'POST',keepalive:true}).catch(()=>{});$('offers').append(a);}
           return;
         }
         if(state.status==='expired')throw new Error('O tempo de acesso terminou. Reabra o portal para ver novos anúncios.');

@@ -1,0 +1,72 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const express=require('express');
+const Database=require('better-sqlite3');
+const crypto=require('crypto');
+const register=require('../lib/ad-stories');
+
+test('campaign albums, settings, server-side viewing gate and contacts',async t=>{
+  const db=new Database(':memory:');
+  db.exec(`CREATE TABLE events(id INTEGER PRIMARY KEY,event_key TEXT,name TEXT,portal_mode TEXT,status TEXT);
+    CREATE TABLE routers(id INTEGER PRIMARY KEY,event_id INTEGER,router_key TEXT,status TEXT);
+    CREATE TABLE ad_campaigns(id INTEGER PRIMARY KEY,event_id INTEGER,name TEXT,image_path TEXT,target_url TEXT,active INTEGER DEFAULT 1,starts_at TEXT,ends_at TEXT,created_at TEXT,updated_at TEXT,impressions INTEGER DEFAULT 0);
+    CREATE TABLE ad_campaign_events(campaign_id INTEGER,event_id INTEGER);
+    CREATE TABLE ad_view_sessions(token_hash TEXT PRIMARY KEY,event_id INTEGER,router_id INTEGER,campaign_id INTEGER REFERENCES ad_campaigns(id) ON DELETE CASCADE,mac TEXT,created_at TEXT,expires_at TEXT,command_ref TEXT);
+    CREATE TABLE admin_commands(command_ref TEXT,status TEXT);
+    INSERT INTO events VALUES(1,'ads','Ads','ads','active'),(2,'pix','PIX','pix','active'),(3,'other','Other','ads','active');
+    INSERT INTO routers VALUES(1,1,'router','active');`);
+  const app=express();app.use(express.json());
+  const adminAuth=(req,res,next)=>req.headers['x-test-admin']==='yes'?next():res.status(401).json({ok:false});
+  const service=register({app,db,adminAuth,requireRole:()=>((req,res,next)=>next()),normalizeMac:v=>/^([a-f0-9]{2}:){5}[a-f0-9]{2}$/i.test(v||'')?v:'',adRouterHasClient:()=>true});
+  app.post('/api/ads/session',service.start);
+  const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
+  t.after(()=>{server.closeAllConnections();server.close();db.close();});
+  const base=`http://127.0.0.1:${server.address().port}`;
+  async function request(path,method='GET',body,admin=true){const r=await fetch(base+path,{method,headers:{'Content-Type':'application/json',...(admin?{'x-test-admin':'yes'}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,data:await r.json()};}
+  const campaign={event_id:1,name:'Album',target_url:'https://example.com',position:2,active:true,slides:[{image_path:'/api/ad-images/first.jpg',duration:3},{image_path:'/api/ad-images/second.png',duration:5}]};
+  let r=await request('/admin/api/ad-story-campaigns','POST',campaign);assert.equal(r.status,201);const id=r.data.id;
+  r=await request('/admin/api/ad-portals/1');assert.equal(r.data.campaigns[0].slides.length,2);
+  assert.equal((await request('/admin/api/ad-portals/1','GET',undefined,false)).status,401);
+  assert.equal((await request('/admin/api/ad-story-campaigns','POST',{...campaign,event_id:2})).status,400);
+  assert.equal((await request('/admin/api/ad-story-campaigns','POST',{...campaign,slides:[]})).status,400);
+  assert.equal((await request('/admin/api/ad-story-campaigns','POST',{...campaign,target_url:'javascript:alert(1)'})).status,400);
+  assert.equal((await request('/admin/api/ad-story-campaigns','POST',{...campaign,starts_at:'2026-01-02',ends_at:'2026-01-01'})).status,400);
+  const config={...r.data.settings,email:'required',city:'optional',survey:'required',survey_question:'Feedback?',title:'Welcome',color:'#336699'};
+  assert.equal((await request('/admin/api/ad-portals/1','PUT',config)).status,200);
+  assert.equal((await request('/admin/api/ad-portals/1')).data.settings.title,'Welcome');
+  const start=await request('/api/ads/session','POST',{event_key:'ads',router_key:'router',mac:'02:00:00:00:00:01'},false);
+  assert.equal(start.status,200);assert.equal(start.data.playlist.length,2);assert.equal(start.data.playlist[1].image_path,campaign.slides[1].image_path);
+  const token=start.data.token,hash=crypto.createHash('sha256').update(token).digest('hex');
+  const row=()=>db.prepare('SELECT * FROM ad_view_sessions WHERE token_hash=?').get(hash);
+  assert.match(service.validateAccess(row()),/Stories/);
+  assert.equal((await request('/api/ads/profile','POST',{token},false)).status,409);
+  assert.equal((await request('/api/ads/story-next','POST',{token,index:0},false)).status,425);
+  db.prepare('UPDATE ad_story_runs SET started_at=? WHERE token_hash=?').run(Date.now()-6000,hash);
+  r=await request('/api/ads/story-next','POST',{token,index:0},false);assert.equal(r.data.index,1);assert.equal(r.data.completed,false);
+  // A duplicate request must not skip the next Story.
+  r=await request('/api/ads/story-next','POST',{token,index:0},false);assert.equal(r.data.index,1);
+  assert.equal((await request('/api/ads/story-next','POST',{token,index:1},false)).status,425);
+  db.prepare('UPDATE ad_story_runs SET started_at=? WHERE token_hash=?').run(Date.now()-6000,hash);
+  assert.equal((await request('/api/ads/story-next','POST',{token,index:1},false)).data.completed,true);
+  assert.match(service.validateAccess(row()),/cadastro/);
+  const profile={token,name:'Test Visitor',phone:'(11) 99999-0000',email:'test@example.com',survey:'Great',terms_accepted:true,marketing_consent:false};
+  assert.equal((await request('/api/ads/profile','POST',{...profile,email:''},false)).status,400);
+  assert.equal((await request('/api/ads/profile','POST',{...profile,terms_accepted:false},false)).status,400);
+  assert.equal((await request('/api/ads/profile','POST',profile,false)).status,200);
+  assert.equal(service.validateAccess(row()),null);
+  assert.equal((await request('/api/ads/profile','POST',profile,false)).status,200);
+  r=await request('/admin/api/ad-contacts?event_id=1');assert.equal(r.data.total,1);assert.equal(r.data.contacts[0].marketing_consent,0);
+  assert.equal((await request('/admin/api/ad-contacts?event_id=3')).data.total,0);
+  assert.equal((await request('/admin/api/ad-contacts?event_id=1','GET',undefined,false)).status,401);
+  // Editing/reordering an album is atomic and applies to subsequent visits.
+  assert.equal((await request('/admin/api/ad-story-campaigns/'+id,'PUT',{...campaign,slides:[campaign.slides[1],campaign.slides[0]]})).status,200);
+  r=await request('/admin/api/ad-portals/1');assert.equal(r.data.campaigns[0].slides[0].image_path,campaign.slides[1].image_path);
+  assert.equal((await request('/admin/api/ad-story-campaigns/'+id,'PUT',{...campaign,slides:[{image_path:'/invalid',duration:0}]})).status,400);
+  assert.equal((await request('/admin/api/ad-portals/1')).data.campaigns[0].slides.length,2);
+  // Legacy single-image campaigns remain visible without destructive migration.
+  db.prepare('INSERT INTO ad_campaigns(event_id,name,image_path) VALUES(1,?,?)').run('Legacy','/api/ad-images/legacy.jpg');
+  assert.equal((await request('/admin/api/ad-portals/1')).data.campaigns.find(c=>c.name==='Legacy').slides.length,1);
+  assert.equal((await request('/admin/api/ad-story-campaigns/'+id,'DELETE')).status,200);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM ad_campaign_slides WHERE campaign_id=?').get(id).n,0);
+  assert.equal((await request('/admin/api/ad-contacts?event_id=1')).data.total,1);
+});

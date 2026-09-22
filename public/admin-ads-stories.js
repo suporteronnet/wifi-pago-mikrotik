@@ -1,50 +1,96 @@
 (() => {
+  'use strict';
   const host=document.getElementById('banners');if(!host)return;
-  const section=document.createElement('section');section.className='section ads-management';
-  section.innerHTML=`<div class="section-header"><h2>Portal de Stories e cadastro</h2></div><div class="section-body">
-    <p>Selecione um evento de anúncios para configurar o portal e consultar os cadastros.</p>
-    <div class="ads-toolbar"><select id="adPortalEvent" aria-label="Evento do portal"><option value="">Selecione um evento</option></select><button id="adRefreshEvents" type="button">Atualizar eventos</button></div>
-    <div id="adPortalMessage" role="status"></div>
+  const stylesheet=document.createElement('link');stylesheet.rel='stylesheet';stylesheet.href='/admin-ads-stories.css';document.head.append(stylesheet);
+  const section=document.createElement('section');section.className='ads-console';
+  section.innerHTML=`<header class="ads-heading"><div><span>HOTSPOT ANÚNCIOS</span><h2>Seu portal, do seu jeito</h2><p>Configure o cadastro, monte os Stories e acompanhe os visitantes.</p></div></header>
+    <div class="ads-event"><label>Evento de anúncios<select id="adPortalEvent"><option value="">Selecione um evento</option></select></label><button type="button" id="adRefreshEvents">Atualizar eventos</button></div>
+    <div id="adPortalMessage" role="status" aria-live="polite"></div>
     <div id="adPortalContent" hidden>
-      <form id="adPortalForm"><div class="ads-grid">
-        <label>Título do portal<input name="title" maxlength="80" required></label><label>Cor dos botões<input name="color" type="color" required></label>
+      <nav class="ads-tabs" aria-label="Configurações de anúncios"><button type="button" data-tab="appearance" class="selected">1. Portal e cadastro</button><button type="button" data-tab="campaigns">2. Campanhas e imagens</button><button type="button" data-tab="contacts">3. Cadastros recebidos</button></nav>
+      <section data-pane="appearance" class="ads-box"><h3>Portal e cadastro</h3><form id="adPortalForm"><div class="ads-grid">
+        <label>Título do portal<input name="title" maxlength="80" required></label><label>Cor principal<input name="color" type="color" required></label>
         <label>E-mail<select name="email"><option value="hidden">Não solicitar</option><option value="optional">Opcional</option><option value="required">Obrigatório</option></select></label>
         <label>Cidade<select name="city"><option value="hidden">Não solicitar</option><option value="optional">Opcional</option><option value="required">Obrigatório</option></select></label>
         <label>Pesquisa<select name="survey"><option value="hidden">Não solicitar</option><option value="optional">Opcional</option><option value="required">Obrigatória</option></select></label>
-        <label>Pergunta da pesquisa<input name="survey_question" maxlength="180" required></label>
-      </div><p>Nome e telefone são obrigatórios. O aceite para receber ofertas é sempre opcional.</p>
-      <label>Termos de uso apresentados ao visitante<textarea name="terms" maxlength="2000" rows="3" required></textarea></label>
-      <label>Texto da autorização para receber ofertas<input name="marketing_label" maxlength="250" required></label>
-      <button type="submit">Salvar cadastro e aparência</button></form>
-      <h3>Sequência dos Stories</h3><p>Cadastre ou troque as imagens em Campanhas abaixo. A ordem menor aparece primeiro. Duração e ordem acompanham a campanha em todos os eventos vinculados. Até 20 anúncios ativos por sequência.</p><div id="adStoryEditors"></div>
-      <h3>Cadastros deste evento</h3><button id="adRefreshContacts" type="button">Atualizar cadastros</button><div class="ads-table" id="adContacts"></div><div class="ads-toolbar"><button id="adContactsPrev" type="button">Anterior</button><span id="adContactsPage"></span><button id="adContactsNext" type="button">Próxima</button></div>
-    </div></div>`;
-  host.prepend(section);
-  const style=document.createElement('style');style.textContent='.ads-management [hidden]{display:none!important}.ads-management label{display:block;margin:12px 0;font-size:13px;color:#cbd5e1}.ads-management input,.ads-management select,.ads-management textarea{display:block;width:100%;margin-top:6px;padding:10px;border:1px solid #334155;border-radius:8px;background:#0b1728;color:#f8fafc;font:14px Arial}.ads-management input[type=color]{height:42px}.ads-management button{padding:10px 16px;border:1px solid #475569;border-radius:8px;background:#253652;color:#f8fafc;cursor:pointer}.ads-management button:disabled{opacity:.5;cursor:wait}.ads-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:0 16px}.ads-toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0}.ads-toolbar select{width:auto;min-width:220px}.ads-management p{color:#94a3b8;font-size:13px;line-height:1.5}.ads-management h3{margin-top:28px}.ads-story-editor{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:12px;border:1px solid #334155;border-radius:10px;margin:10px 0}.ads-story-editor img{width:60px;height:90px;object-fit:contain}.ads-story-editor label{width:120px}.ads-table{overflow:auto;margin:16px 0}.ads-table table{width:100%;border-collapse:collapse;min-width:700px}.ads-table th,.ads-table td{text-align:left;padding:10px;border-bottom:1px solid #334155;font-size:13px;max-width:250px;overflow-wrap:anywhere}#adPortalMessage{padding:10px 0;color:#a7f3d0}';document.head.append(style);
+        <label>Pergunta da pesquisa<input name="survey_question" maxlength="180" required></label></div>
+        <p>Nome e telefone são obrigatórios. Receber ofertas é uma escolha do visitante.</p>
+        <label>Termos de uso apresentados ao visitante<textarea name="terms" maxlength="2000" rows="4" required></textarea></label>
+        <label>Texto da autorização para receber ofertas<input name="marketing_label" maxlength="250" required></label>
+        <div class="ads-actions"><button class="primary" type="submit">Salvar portal e cadastro</button><span id="adSettingsFeedback" role="status"></span></div>
+      </form></section>
+      <section data-pane="campaigns" hidden><div class="ads-box"><div class="ads-row"><div><h3>Campanhas e imagens</h3><p>Cada campanha pode ter até 20 imagens. A ordem das campanhas e das imagens define a sequência dos Stories.</p></div><button id="adNewCampaign" type="button" class="primary">+ Nova campanha</button></div><div id="adCampaignList"></div></div>
+        <section id="adCampaignEditor" class="ads-box" hidden><h3 id="adCampaignEditorTitle">Nova campanha</h3><form id="adCampaignForm"><div class="ads-grid">
+          <label>Nome da campanha<input name="name" maxlength="100" required></label><label>Link do anunciante (opcional)<input name="target_url" type="url" placeholder="https://..."></label>
+          <label>Ordem da campanha<input name="position" type="number" min="0" max="999" value="0" required></label><label>Situação<select name="active"><option value="true">Ativa</option><option value="false">Inativa</option></select></label>
+          <label>Início (opcional)<input name="starts_at" type="datetime-local"></label><label>Fim (opcional)<input name="ends_at" type="datetime-local"></label>
+        </div><div class="ads-upload"><label>Selecionar imagens — pode escolher várias de uma vez<input id="adCampaignFiles" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><p>JPG, PNG ou WebP, até 900 KB por imagem. Para Stories, prefira imagens verticais. As imagens existentes continuam disponíveis para edição.</p></div>
+        <div id="adSlideList" class="ads-slide-grid"></div><p id="adSlideCount"></p><div id="adCampaignFeedback" role="status"></div>
+        <div class="ads-actions"><button type="submit" class="primary" id="adSaveCampaign">Salvar campanha e imagens</button><button type="button" id="adCancelCampaign">Cancelar</button></div></form></section>
+      </section>
+      <section data-pane="contacts" class="ads-box" hidden><div class="ads-row"><h3>Cadastros deste evento</h3><button id="adRefreshContacts" type="button">Atualizar cadastros</button></div><div class="ads-table" id="adContacts"></div><div class="ads-actions"><button id="adContactsPrev" type="button">Anterior</button><span id="adContactsPage"></span><button id="adContactsNext" type="button">Próxima</button></div></section>
+    </div>`;
+  host.replaceChildren(section);
   const $=id=>document.getElementById(id),escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  let page=1,eventId=0;
-  async function request(path,options={}){const response=await fetch(path,{cache:'no-store',...options});const data=await response.json();if(!response.ok||data.ok===false)throw new Error(data.error||'Não foi possível carregar os dados.');return data;}
-  function report(error){$('adPortalMessage').textContent=error.message||error;}
-  async function events(){try{const data=await request('/admin/api/events');const selected=$('adPortalEvent').value;$('adPortalEvent').innerHTML='<option value="">Selecione um evento</option>'+(Array.isArray(data)?data:data.events||[]).filter(e=>e.portal_mode==='ads').map(e=>`<option value="${Number(e.id)}">${escape(e.name)}</option>`).join('');$('adPortalEvent').value=selected;}catch(error){report(error);}}
-  async function contacts(){
-    const requested=eventId;if(!requested)return;
-    try{const data=await request(`/admin/api/ad-contacts?event_id=${requested}&page=${page}`);if(requested!==eventId)return;
-      const rows=data.contacts.map(c=>`<tr><td>${escape(c.name)}</td><td>${escape(c.phone)}</td><td>${escape(c.email||'—')}</td><td>${escape(c.city||'—')}</td><td>${escape(c.survey_answer||'—')}</td><td>${c.marketing_consent?'Autorizou':'Não autorizou'}</td><td>${c.access_status==='applied'?'Confirmado':c.access_status==='pending'?'Aguardando MikroTik':'Cadastro recebido'}</td><td>${escape(new Date(c.created_at).toLocaleString('pt-BR'))}</td></tr>`).join('');
-      $('adContacts').innerHTML=rows?`<table><thead><tr><th>Nome</th><th>Telefone</th><th>E-mail</th><th>Cidade</th><th>Pesquisa</th><th>Ofertas</th><th>Liberação</th><th>Cadastro</th></tr></thead><tbody>${rows}</tbody></table>`:'Nenhum cadastro recebido.';
-      $('adContactsPage').textContent=`Página ${page} • ${data.total} cadastros`;$('adContactsPrev').disabled=page<=1;$('adContactsNext').disabled=page*50>=data.total;
-    }catch(error){report(error);}
+  let eventId=0,page=1,campaigns=[],editingId=null,slides=[],saving=false,dirty=false;
+  const report=(text,error=false,id='adPortalMessage')=>{$(id).textContent=text;$(id).classList.toggle('error',error);};
+  async function request(path,options={}){const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),20000);try{const response=await fetch(path,{cache:'no-store',...options,signal:controller.signal});const data=await response.json();if(!response.ok||data.ok===false)throw new Error(data.error||'Não foi possível concluir a operação.');return data;}finally{clearTimeout(timeout);}}
+  const json=(method,body)=>({method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  function tab(name){section.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('selected',b.dataset.tab===name));section.querySelectorAll('[data-pane]').forEach(p=>p.hidden=p.dataset.pane!==name);if(name==='contacts')contacts();}
+  function localDate(value){if(!value)return '';const d=new Date(value);if(!Number.isFinite(d.getTime()))return '';const pad=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;}
+  function discard(){slides.forEach(s=>{if(s.preview)URL.revokeObjectURL(s.preview);});slides=[];editingId=null;dirty=false;$('adCampaignEditor').hidden=true;}
+  function renderCampaigns(){
+    $('adCampaignList').innerHTML=campaigns.length?campaigns.map(c=>`<article class="ads-campaign"><div class="ads-thumbs">${c.slides.slice(0,4).map(s=>`<img src="${escape(s.image_path)}" alt="">`).join('')}</div><div class="ads-campaign-info"><h4>${escape(c.name)}</h4><p>${c.slides.length} imagem(ns) • ${c.slides.reduce((sum,s)=>sum+s.duration,0)} segundos • Ordem ${c.position}</p><span class="ads-badge">${c.active?'Ativa':'Inativa'}${c.starts_at?' • Início '+escape(new Date(c.starts_at).toLocaleString('pt-BR')):''}${c.ends_at?' • Fim '+escape(new Date(c.ends_at).toLocaleString('pt-BR')):''}</span></div><div class="ads-actions"><button type="button" data-edit="${c.id}">Editar imagens e dados</button><button type="button" data-delete="${c.id}" class="danger">Excluir campanha</button></div></article>`).join(''):'<p class="ads-empty">Nenhuma campanha neste evento. Clique em Nova campanha e selecione as imagens.</p>';
   }
+  function renderSlides(){
+    $('adSlideList').innerHTML=slides.map((s,i)=>`<article class="ads-slide"><img src="${escape(s.preview||s.image_path)}" alt="Story ${i+1}"><div><strong>Story ${i+1}</strong><label>Duração em segundos<input type="number" min="3" max="30" value="${s.duration}" data-duration="${i}" required></label><div class="ads-actions"><button type="button" data-up="${i}" ${i===0?'disabled':''} aria-label="Mover Story ${i+1} para antes">↑</button><button type="button" data-down="${i}" ${i===slides.length-1?'disabled':''} aria-label="Mover Story ${i+1} para depois">↓</button><button type="button" data-remove="${i}" class="danger">Remover</button></div></div></article>`).join('');
+    $('adSlideCount').textContent=`${slides.length} de 20 imagens selecionadas`;
+  }
+  function edit(campaign){
+    if(saving)return;if(dirty&&!confirm('Descartar as alterações desta campanha?'))return;discard();
+    const form=$('adCampaignForm');form.reset();editingId=campaign?.id||null;
+    for(const key of ['name','target_url','position'])form.elements[key].value=campaign?.[key]??(key==='position'?campaigns.length:'');
+    form.elements.active.value=String(campaign?!!campaign.active:true);form.elements.starts_at.value=localDate(campaign?.starts_at);form.elements.ends_at.value=localDate(campaign?.ends_at);
+    slides=(campaign?.slides||[]).map(s=>({...s}));renderSlides();report('',false,'adCampaignFeedback');$('adCampaignEditorTitle').textContent=campaign?'Editar campanha':'Nova campanha';$('adCampaignEditor').hidden=false;$('adCampaignEditor').scrollIntoView({behavior:'smooth',block:'start'});form.elements.name.focus();
+  }
+  async function refreshCampaigns(){const requested=eventId;const data=await request(`/admin/api/ad-portals/${requested}`);if(requested!==eventId)return;campaigns=data.campaigns;renderCampaigns();}
+  async function events(){try{const data=await request('/admin/api/events');$('adPortalEvent').innerHTML='<option value="">Selecione um evento</option>'+(Array.isArray(data)?data:data.events||[]).filter(e=>e.portal_mode==='ads').map(e=>`<option value="${Number(e.id)}">${escape(e.name)}</option>`).join('');$('adPortalEvent').value=eventId||'';}catch(error){report(error.message,true);}}
   async function load(){
-    eventId=Number($('adPortalEvent').value);page=1;$('adPortalContent').hidden=true;if(!eventId)return;const requested=eventId;
-    try{const data=await request(`/admin/api/ad-portals/${requested}`);if(eventId!==requested)return;
+    const requested=Number($('adPortalEvent').value);if(saving||(dirty&&!confirm('Descartar as alterações desta campanha?'))){$('adPortalEvent').value=eventId;return;}
+    discard();eventId=requested;page=1;$('adPortalContent').hidden=true;if(!requested)return;
+    try{const data=await request(`/admin/api/ad-portals/${requested}`);if(requested!==eventId)return;
       for(const [key,value] of Object.entries(data.settings))if($('adPortalForm').elements[key])$('adPortalForm').elements[key].value=value;
-      $('adStoryEditors').innerHTML=data.campaigns.map(c=>`<form class="ads-story-editor" data-campaign="${Number(c.id)}"><img src="${escape(c.image_path)}" alt=""><strong>${escape(c.name)} ${c.active?'':'(inativa)'}</strong><label>Duração (segundos)<input name="duration" type="number" min="3" max="30" value="${Number(c.duration)}" required></label><label>Ordem<input name="position" type="number" min="0" max="999" value="${Number(c.position)}" required></label><button type="submit">Salvar Story</button></form>`).join('')||'Vincule uma campanha a este evento para montar os Stories.';
-      $('adPortalContent').hidden=false;report('Configuração carregada.');await contacts();
-    }catch(error){report(error);}
+      campaigns=data.campaigns;renderCampaigns();$('adPortalContent').hidden=false;report('Evento selecionado: '+data.event.name);report('',false,'adSettingsFeedback');await contacts();
+    }catch(error){report(error.message,true);}
   }
-  $('adPortalForm').onsubmit=async event=>{event.preventDefault();const body=Object.fromEntries(new FormData(event.currentTarget));try{await request(`/admin/api/ad-portals/${eventId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});report('Configuração salva. Será usada nas próximas visitas.');}catch(error){report(error);}};
-  $('adStoryEditors').onsubmit=async event=>{event.preventDefault();const form=event.target,body=Object.fromEntries(new FormData(form));try{await request(`/admin/api/ad-story-campaigns/${form.dataset.campaign}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});report('Story salvo. A sequência será usada nas próximas visitas.');}catch(error){report(error);}};
-  $('adPortalEvent').onchange=load;$('adRefreshEvents').onclick=async()=>{await events();await load();};$('adRefreshContacts').onclick=contacts;
-  $('adContactsPrev').onclick=()=>{page=Math.max(1,page-1);contacts();};$('adContactsNext').onclick=()=>{page++;contacts();};
+  async function contacts(){const requested=eventId,requestedPage=page;if(!requested)return;try{const data=await request(`/admin/api/ad-contacts?event_id=${requested}&page=${requestedPage}`);if(requested!==eventId||requestedPage!==page)return;
+    const rows=data.contacts.map(c=>`<tr><td>${escape(c.name)}</td><td>${escape(c.phone)}</td><td>${escape(c.email||'—')}</td><td>${escape(c.city||'—')}</td><td>${escape(c.survey_answer||'—')}</td><td>${c.marketing_consent?'Autorizou':'Não autorizou'}</td><td>${c.access_status==='applied'?'Confirmado':c.access_status==='pending'?'Aguardando MikroTik':'Cadastro recebido'}</td><td>${escape(new Date(c.created_at).toLocaleString('pt-BR'))}</td></tr>`).join('');
+    $('adContacts').innerHTML=rows?`<table><thead><tr><th>Nome</th><th>Telefone</th><th>E-mail</th><th>Cidade</th><th>Pesquisa</th><th>Ofertas</th><th>Liberação</th><th>Cadastro</th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="ads-empty">Nenhum cadastro recebido neste evento.</p>';
+    $('adContactsPage').textContent=`Página ${page} • ${data.total} cadastros`;$('adContactsPrev').disabled=page<=1;$('adContactsNext').disabled=page*50>=data.total;
+  }catch(error){report(error.message,true);}}
+  $('adCampaignFiles').onchange=event=>{
+    const files=Array.from(event.target.files);if(slides.length+files.length>20){report('Uma campanha pode ter até 20 imagens.',true,'adCampaignFeedback');event.target.value='';return;}
+    const invalid=files.find(f=>!['image/jpeg','image/png','image/webp'].includes(f.type)||f.size>900*1024||f.size===0);
+    if(invalid){report(`O arquivo ${invalid.name} precisa ser JPG, PNG ou WebP de até 900 KB.`,true,'adCampaignFeedback');event.target.value='';return;}
+    slides.push(...files.map(file=>({file,preview:URL.createObjectURL(file),duration:8})));dirty=true;renderSlides();event.target.value='';report('Imagens selecionadas. Ajuste a ordem e salve a campanha.',false,'adCampaignFeedback');
+  };
+  $('adSlideList').oninput=event=>{if(event.target.dataset.duration!==undefined){slides[Number(event.target.dataset.duration)].duration=Number(event.target.value);dirty=true;}};
+  $('adSlideList').onclick=event=>{const b=event.target.closest('button');if(!b||saving)return;for(const action of ['up','down','remove'])if(b.dataset[action]!==undefined){const i=Number(b.dataset[action]);if(action==='remove'){if(slides[i].preview)URL.revokeObjectURL(slides[i].preview);slides.splice(i,1);}else{const next=i+(action==='up'?-1:1);[slides[i],slides[next]]=[slides[next],slides[i]];}dirty=true;renderSlides();break;}};
+  $('adCampaignForm').oninput=()=>{dirty=true;};
+  $('adCampaignForm').onsubmit=async event=>{
+    event.preventDefault();if(saving)return;if(!slides.length){report('Selecione pelo menos uma imagem.',true,'adCampaignFeedback');return;}
+    const form=event.currentTarget,body=Object.fromEntries(new FormData(form)),selectedEvent=eventId;
+    if(slides.some(s=>!Number.isInteger(s.duration)||s.duration<3||s.duration>30)){report('Use durações de 3 a 30 segundos.',true,'adCampaignFeedback');return;}
+    saving=true;form.querySelectorAll('input,select,button').forEach(x=>x.disabled=true);$('adPortalEvent').disabled=true;$('adNewCampaign').disabled=true;
+    try{
+      for(let i=0;i<slides.length;i++){const s=slides[i];if(s.file&&!s.image_path){report(`Enviando imagem ${i+1} de ${slides.length}…`,false,'adCampaignFeedback');const data=await request('/admin/api/ad-images',{method:'POST',headers:{'Content-Type':s.file.type},body:s.file});s.image_path=data.image_path;}}
+      body.event_id=selectedEvent;body.active=body.active==='true';body.starts_at=body.starts_at?new Date(body.starts_at).toISOString():null;body.ends_at=body.ends_at?new Date(body.ends_at).toISOString():null;body.slides=slides.map(s=>({image_path:s.image_path,duration:s.duration}));
+      const saved=await request('/admin/api/ad-story-campaigns'+(editingId?'/'+editingId:''),json(editingId?'PUT':'POST',body));editingId=saved.id||editingId;dirty=false;await refreshCampaigns();discard();report('Campanha e imagens salvas. A nova sequência será usada nas próximas visitas.');
+    }catch(error){report(error.message||'Falha ao salvar. Suas imagens continuam selecionadas para tentar novamente.',true,'adCampaignFeedback');}
+    finally{saving=false;form.querySelectorAll('input,select,button').forEach(x=>x.disabled=false);$('adPortalEvent').disabled=false;$('adNewCampaign').disabled=false;renderSlides();}
+  };
+  $('adPortalForm').onsubmit=async event=>{event.preventDefault();const button=event.currentTarget.querySelector('button'),body=Object.fromEntries(new FormData(event.currentTarget)),requested=eventId;button.disabled=true;try{await request(`/admin/api/ad-portals/${requested}`,json('PUT',body));if(requested===eventId)report('Configuração salva para as próximas visitas.',false,'adSettingsFeedback');}catch(error){report(error.message,true,'adSettingsFeedback');}finally{button.disabled=false;}};
+  $('adCampaignList').onclick=async event=>{const b=event.target.closest('button');if(!b||saving)return;if(b.dataset.edit){edit(campaigns.find(c=>c.id===Number(b.dataset.edit)));return;}if(b.dataset.delete&&confirm('Excluir esta campanha e suas imagens da sequência?')){b.disabled=true;try{await request(`/admin/api/ad-story-campaigns/${b.dataset.delete}`,{method:'DELETE'});if(editingId===Number(b.dataset.delete))discard();await refreshCampaigns();report('Campanha excluída.');}catch(error){report(error.message,true);b.disabled=false;}}};
+  section.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tab(b.dataset.tab));$('adPortalEvent').onchange=load;$('adRefreshEvents').onclick=events;$('adNewCampaign').onclick=()=>edit(null);$('adCancelCampaign').onclick=()=>{if(!dirty||confirm('Descartar alterações da campanha?'))discard();};$('adRefreshContacts').onclick=contacts;$('adContactsPrev').onclick=()=>{page=Math.max(1,page-1);contacts();};$('adContactsNext').onclick=()=>{page++;contacts();};
   events();
 })();
