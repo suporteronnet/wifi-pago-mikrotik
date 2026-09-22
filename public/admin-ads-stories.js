@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const host=document.getElementById('banners');if(!host)return;
-  const stylesheet=document.createElement('link');stylesheet.rel='stylesheet';stylesheet.href='/admin-ads-stories.css';document.head.append(stylesheet);
+  const stylesheet=document.createElement('link');stylesheet.rel='stylesheet';stylesheet.href='/admin-ads-stories.css?v=20260922-tabs';document.head.append(stylesheet);
   const section=document.createElement('section');section.className='ads-console';
   section.innerHTML=`<header class="ads-heading"><div><span>HOTSPOT ANÚNCIOS</span><h2>Seu portal, do seu jeito</h2><p>Configure o cadastro, monte os Stories e acompanhe os visitantes.</p></div></header>
     <div class="ads-event"><label>Evento de anúncios<select id="adPortalEvent"><option value="">Selecione um evento</option></select></label><button type="button" id="adRefreshEvents">Atualizar eventos</button></div>
@@ -36,7 +36,21 @@
   const report=(text,error=false,id='adPortalMessage')=>{$(id).textContent=text;$(id).classList.toggle('error',error);};
   async function request(path,options={}){const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),20000);try{const response=await fetch(path,{cache:'no-store',...options,signal:controller.signal});const data=await response.json();if(!response.ok||data.ok===false)throw new Error(data.error||'Não foi possível concluir a operação.');return data;}finally{clearTimeout(timeout);}}
   const json=(method,body)=>({method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  function tab(name){section.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('selected',b.dataset.tab===name));section.querySelectorAll('[data-pane]').forEach(p=>p.hidden=p.dataset.pane!==name);if(name==='contacts')contacts();}
+  function tab(name){
+    const panes=Array.from(section.querySelectorAll('[data-pane]'));
+    if(!panes.some(p=>p.dataset.pane===name))return;
+    section.querySelectorAll('[data-tab]').forEach(b=>{
+      const selected=b.dataset.tab===name;
+      b.classList.toggle('selected',selected);
+      b.setAttribute('aria-selected',String(selected));
+    });
+    panes.forEach(p=>{
+      const selected=p.dataset.pane===name;
+      p.hidden=!selected;
+      p.style.display=selected?'block':'none';
+    });
+    if(name==='contacts')contacts();
+  }
   function localDate(value){if(!value)return '';const d=new Date(value);if(!Number.isFinite(d.getTime()))return '';const pad=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;}
   function discard(){slides.forEach(s=>{if(s.preview)URL.revokeObjectURL(s.preview);});slides=[];editingId=null;dirty=false;$('adCampaignEditor').hidden=true;}
   function renderCampaigns(){
@@ -60,7 +74,7 @@
     discard();eventId=requested;page=1;$('adPortalContent').hidden=true;if(!requested)return;
     try{const data=await request(`/admin/api/ad-portals/${requested}`);if(requested!==eventId)return;
       for(const [key,value] of Object.entries(data.settings))if($('adPortalForm').elements[key])$('adPortalForm').elements[key].value=value;
-      campaigns=data.campaigns;renderCampaigns();$('adPortalContent').hidden=false;report('Evento selecionado: '+data.event.name);report('',false,'adSettingsFeedback');await contacts();
+      campaigns=data.campaigns;renderCampaigns();$('adPortalContent').hidden=false;tab('appearance');report('Evento selecionado: '+data.event.name);report('',false,'adSettingsFeedback');await contacts();
     }catch(error){report(error.message,true);}
   }
   async function contacts(){const requested=eventId,requestedPage=page;if(!requested)return;try{const data=await request(`/admin/api/ad-contacts?event_id=${requested}&page=${requestedPage}`);if(requested!==eventId||requestedPage!==page)return;
