@@ -109,9 +109,13 @@ test('campaign albums, settings, server-side viewing gate and contacts',async t=
   assert.equal((await request('/admin/api/ad-portals/1')).data.campaigns[0].slides.length,2);
   // Lead-only: no campaign, no mandatory name/phone, configurable answers.
   db.exec("INSERT INTO routers VALUES(3,3,'lead-router','active')");
-  const leadConfig={...config,mode:'lead',fields:[{id:'opinion',label:'Sua opinião',type:'textarea',enabled:true,required:true},{id:'secret',label:'Oculto',type:'text',enabled:false,required:true}]};
+  const leadConfig={...config,logo_path:'/api/ad-images/advertiser.png',mode:'lead',fields:[{id:'opinion',label:'Sua opinião',type:'textarea',enabled:true,required:true},{id:'secret',label:'Oculto',type:'text',enabled:false,required:true}]};
   assert.equal((await request('/admin/api/ad-portals/3','PUT',leadConfig)).status,200);
   const lead=await request('/api/ads/session','POST',{event_key:'other',router_key:'lead-router',mac:'02:00:00:00:00:03'},false);
+  assert.equal(lead.data.settings.logo_path,leadConfig.logo_path);
+  assert.equal((await request('/admin/api/ad-portals/3','PUT',{...leadConfig,logo_path:'https://external.example/logo.png'})).status,400);
+  assert.equal((await request('/admin/api/ad-portals/3','PUT',{...leadConfig,logo_path:''})).status,200);
+  assert.equal((await request('/admin/api/ad-portals/3')).data.settings.logo_path,'');
   assert.equal(lead.status,200);assert.deepEqual(lead.data.playlist,[]);
   const leadBody={token:lead.data.token,terms_accepted:true,answers:{secret:'Ignored'}};
   assert.equal((await request('/api/ads/profile','POST',leadBody,false)).status,400);

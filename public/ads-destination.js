@@ -2,6 +2,10 @@
   'use strict';
   const params=new URLSearchParams(location.hash.slice(1)),token=params.get('token');
   const status=document.getElementById('status'),link=document.getElementById('destination'),retry=document.getElementById('retry');
+  const logo=params.get('logo');
+  if(logo&&/^\/api\/ad-images\/[a-zA-Z0-9-]+\.(jpg|jpeg|png|webp)$/.test(logo)){
+    const brand=document.querySelector('.portal-brand img');brand.src=logo;brand.onerror=()=>{brand.onerror=null;brand.src='/wifi-total-mark.svg';};
+  }
   let destination;
   try{
     destination=new URL(params.get('destination'));

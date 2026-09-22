@@ -11,6 +11,7 @@
       <section data-pane="appearance" class="portal-config-box"><h3>Portal e cadastro</h3><form id="adPortalForm"><div class="portal-config-grid">
         <label>Título do portal<input name="title" maxlength="80" required></label><label>Cor principal<input name="color" type="color" required></label>
         <label>Modo do portal<select name="mode"><option value="ads_phone">An&#250;ncios + WhatsApp</option><option value="lead">Somente pesquisa</option><option value="lead_ads">Pesquisa + an&#250;ncios</option></select></label></div>
+        <div class="portal-config-upload"><label>Logo do anunciante<input id="adLogoFile" type="file" accept="image/jpeg,image/png,image/webp"></label><input name="logo_path" type="hidden"><img id="adLogoPreview" src="/wifi-total-mark.svg" alt="Prévia da logo do portal" width="100" height="100" style="border-radius:50%;object-fit:cover;background:white;margin:12px 0"><p>JPG, PNG ou WebP, até 900 KB. A imagem será exibida em um círculo. Salve o portal para aplicar.</p><button id="adLogoReset" type="button">Usar logo WI-FI TOTAL</button></div>
         <div id="portalFieldsEditor"><h3>Campos da pesquisa</h3><div id="portalFields"></div><button type="button" id="addPortalField">+ Adicionar pergunta</button></div>
         <p id="portalModeHint"></p>
         <label>Termos de uso apresentados ao visitante<textarea name="terms" maxlength="2000" rows="4" required></textarea></label>
@@ -109,6 +110,7 @@
     try{const data=await request(`/admin/api/ad-portals/${requested}`);if(requested!==eventId)return;
       for(const [key,value] of Object.entries(data.settings))if($('adPortalForm').elements[key])$('adPortalForm').elements[key].value=value;
       loadedSettings=data.settings;portalFields=(data.settings.fields||[]).map(f=>({...f}));renderFields();updateMode();
+      $('adPortalForm').elements.logo_path.value=data.settings.logo_path||'';$('adLogoPreview').src=data.settings.logo_path||'/wifi-total-mark.svg';$('adLogoFile').value='';
       campaigns=data.campaigns;renderCampaigns();$('adPortalContent').hidden=false;tab('appearance');report('Evento selecionado: '+data.event.name);report('',false,'adSettingsFeedback');await contacts();
     }catch(error){report(error.message,true);}
   }
@@ -139,6 +141,15 @@
       const saved=await request('/admin/api/ad-story-campaigns'+(editingId?'/'+editingId:''),json(editingId?'PUT':'POST',body));editingId=saved.id||editingId;dirty=false;await refreshCampaigns();discard();report('Campanha e imagens salvas. A nova sequência será usada nas próximas visitas.');
     }catch(error){report(error.message||'Falha ao salvar. Suas imagens continuam selecionadas para tentar novamente.',true,'adCampaignFeedback');}
     finally{saving=false;form.querySelectorAll('input,select,textarea,button').forEach(x=>x.disabled=false);$('adPortalEvent').disabled=false;$('adNewCampaign').disabled=false;renderSlides();}
+  };
+  $('adLogoReset').onclick=()=>{$('adPortalForm').elements.logo_path.value='';$('adLogoPreview').src='/wifi-total-mark.svg';$('adLogoFile').value='';};
+  $('adLogoFile').onchange=async event=>{
+    const file=event.target.files[0],requested=eventId;if(!file)return;
+    if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>900*1024){report('Use JPG, PNG ou WebP de até 900 KB.',true,'adSettingsFeedback');event.target.value='';return;}
+    const form=$('adPortalForm'),button=form.querySelector('button[type=submit]');button.disabled=true;$('adLogoReset').disabled=true;$('adLogoFile').disabled=true;
+    try{const data=await request('/admin/api/ad-images',{method:'POST',headers:{'Content-Type':file.type},body:file});if(requested===eventId){form.elements.logo_path.value=data.image_path;$('adLogoPreview').src=data.image_path;report('Logo enviada. Salve o portal para aplicar.',false,'adSettingsFeedback');}}
+    catch(error){report(error.message,true,'adSettingsFeedback');}
+    finally{button.disabled=false;$('adLogoReset').disabled=false;$('adLogoFile').disabled=false;}
   };
   $('adPortalForm').onsubmit=async event=>{event.preventDefault();const button=event.currentTarget.querySelector('button[type=submit]'),body={...loadedSettings,...Object.fromEntries(new FormData(event.currentTarget)),fields:portalFields},requested=eventId;button.disabled=true;try{await request(`/admin/api/ad-portals/${requested}`,json('PUT',body));if(requested===eventId)report('Configuração salva para as próximas visitas.',false,'adSettingsFeedback');}catch(error){report(error.message,true,'adSettingsFeedback');}finally{button.disabled=false;}};
   $('adCampaignList').onclick=async event=>{const b=event.target.closest('button');if(!b||saving)return;if(b.dataset.edit){edit(campaigns.find(c=>c.id===Number(b.dataset.edit)));return;}if(b.dataset.delete&&confirm('Excluir esta campanha e suas imagens da sequência?')){b.disabled=true;try{await request(`/admin/api/ad-story-campaigns/${b.dataset.delete}`,{method:'DELETE'});if(editingId===Number(b.dataset.delete))discard();await refreshCampaigns();report('Campanha excluída.');}catch(error){report(error.message,true);b.disabled=false;}}};

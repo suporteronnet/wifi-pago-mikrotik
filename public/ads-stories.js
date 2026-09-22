@@ -28,7 +28,7 @@
     portalConfig=config;
     document.body.dataset.mode=config.mode;
     document.body.dataset.experience='light';
-    const brand=document.querySelector('.portal-brand img');brand.src='/wifi-total-mark.svg';brand.width=144;brand.height=144;
+    const brand=document.querySelector('.portal-brand img');brand.src=config.logo_path||'/wifi-total-mark.svg';brand.onerror=()=>{brand.onerror=null;brand.src='/wifi-total-mark.svg';};brand.width=144;brand.height=144;
     document.documentElement.style.setProperty('--accent',config.color);
     $('portalTitle').textContent=config.title;$('termsText').textContent=config.terms;$('marketingText').textContent=config.marketing_label;$('surveyQuestion').textContent=config.survey_question;
     const fields=config.mode==='ads_phone'?[{id:'phone',label:'WhatsApp com DDD',type:'tel',enabled:true,required:true}]:config.fields;
@@ -118,7 +118,7 @@
     if(connecting||!profileSaved)return;connecting=true;$('connect').disabled=true;$('connect').textContent='Solicitando acesso…';
     if(destination&&/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){
       const handoff=new URL('/ads-destination.html',location.origin);
-      handoff.hash=new URLSearchParams({token,destination,authorize:'1'}).toString();
+      handoff.hash=new URLSearchParams({token,destination,authorize:'1',logo:portalConfig.logo_path||''}).toString();
       location.assign(handoff.href);
       return;
     }

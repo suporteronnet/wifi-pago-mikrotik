@@ -21,3 +21,4 @@ body[data-experience=light][data-step=story] #storyOverlay{position:absolute;ins
 @keyframes story-caption-in{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
 @media(prefers-reduced-motion:reduce){body[data-experience=light][data-step=story] #storyOverlay,body[data-experience=light][data-step=story] #storyImage{animation:none}}
 body[data-experience=light] #pause::after{content:none!important}body[data-experience=light] #pause svg{display:block;width:20px;height:20px}#browserUrl{font-size:12px;background:#fff;color:#152133}
+body[data-experience=light] .portal-brand img{border-radius:50%;object-fit:cover;background:#fff}
