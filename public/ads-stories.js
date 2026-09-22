@@ -4,6 +4,14 @@
   const context={event_key:params.get('event_key')||'',router_key:params.get('router_key')||'',mac:params.get('mac')||''};
   let token='',playlist=[],index=0,elapsed=0,paused=false,ready=false,timer=null,advancing=false,connecting=false;
   let portalConfig={},profileSaved=false;
+  function step(name){document.body.dataset.step=name;if(name!=='story')window.scrollTo({top:0,behavior:'instant'});}
+  function updatePhoneButton(){
+    if(portalConfig.mode!=='ads_phone'||connecting)return;
+    const form=$('profileForm'),phone=form.elements.phone,value=phone.value.replace(/\D/g,'');
+    phone.setCustomValidity(value&& !/^\d{10,15}$/.test(value)?'Informe o telefone com DDD.':'');
+    $('connect').disabled=!form.checkValidity();
+    phone.parentElement.classList.toggle('phone-valid',/^\d{10,15}$/.test(value));
+  }
   const interests=new Set(),sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
   const message=(text,error=false)=>{$('message').textContent=text;$('message').classList.toggle('error',error);};
   const url=value=>{if(!value)return '';try{const u=new URL(value,location.origin);return ['http:','https:'].includes(u.protocol)?u.href:'';}catch{return '';}};
@@ -13,6 +21,7 @@
   }
   function configure(config){
     portalConfig=config;
+    document.body.dataset.mode=config.mode;
     document.documentElement.style.setProperty('--accent',config.color);
     $('portalTitle').textContent=config.title;$('termsText').textContent=config.terms;$('marketingText').textContent=config.marketing_label;$('surveyQuestion').textContent=config.survey_question;
     const fields=config.mode==='ads_phone'?[{id:'phone',label:'WhatsApp com DDD',type:'tel',enabled:true,required:true}]:config.fields;
@@ -23,8 +32,17 @@
     document.querySelector('.signup-intro h2').textContent=config.mode==='ads_phone'?'Informe seu WhatsApp para continuar':'Responda para conectar';
     document.querySelector('.signup-intro p').textContent=config.mode==='ads_phone'?'Na próxima tela, escolha uma oferta ou continue para navegar.':'Preencha os campos abaixo para liberar seu acesso.';
     $('connect').textContent=config.mode==='lead'?'CONECTAR E NAVEGAR':'VER OFERTAS';
+    if(config.mode==='ads_phone'){
+      const brand=document.querySelector('.portal-brand img');brand.src='/wifi-total-mark.svg';brand.width=144;brand.height=144;
+      const intro=document.querySelector('.signup-intro');intro.querySelector('h2').textContent='Olá, seja bem-vindo!';intro.querySelector('p').textContent='Por favor, insira seu número de WhatsApp para prosseguir.';
+      const input=$('profileForm').elements.phone;input.autocomplete='tel';input.inputMode='tel';input.placeholder='(00) 00000-0000';input.maxLength=25;input.setAttribute('aria-label','WhatsApp com DDD');input.parentElement.classList.add('phone-entry');
+      $('connect').textContent='Prosseguir →';$('skipOffers').textContent='Prosseguir →';
+      $('profileForm').addEventListener('input',updatePhoneButton);updatePhoneButton();
+    }
   }
   async function showStory(){
+    step('story');
+    $('pause').setAttribute('aria-pressed','false');
     clearInterval(timer);ready=false;elapsed=0;paused=false;$('pause').textContent='Pausar';
     $('storyImage').hidden=true;$('storyLoading').hidden=false;
     const story=playlist[index];$('storyCount').textContent=`${index+1} DE ${playlist.length}`;
@@ -45,11 +63,11 @@
   async function advance(){
     if(advancing||!ready||elapsed<playlist[index].duration*1000)return;
     advancing=true;$('nextStory').disabled=true;
-    try{const result=await post('/api/ads/story-next',{token,index});if(result.completed){$('storyScreen').hidden=true;$('profileScreen').hidden=false;message('Preencha seus dados para liberar o acesso.');}else{index=result.index;await showStory();}}
+    try{const result=await post('/api/ads/story-next',{token,index});if(result.completed){$('storyScreen').hidden=true;$('profileScreen').hidden=false;step('profile');message(portalConfig.mode==='ads_phone'?'':'Preencha seus dados para liberar o acesso.');}else{index=result.index;await showStory();}}
     catch(error){message(error.status?error.message:'A conexão oscilou. Toque para continuar.',true);$('nextStory').disabled=false;$('nextStory').textContent='Tentar continuar';if(!ready)$('restart').hidden=false;}
     finally{advancing=false;}
   }
-  $('pause').onclick=()=>{paused=!paused;$('pause').textContent=paused?'Continuar':'Pausar';};$('nextStory').onclick=advance;
+  $('pause').onclick=()=>{paused=!paused;$('pause').textContent=paused?'Continuar':'Pausar';$('pause').setAttribute('aria-pressed',String(paused));$('pause').setAttribute('aria-label',paused?'Continuar Story':'Pausar Story');};$('nextStory').onclick=advance;
   function openAdvertiser(event){
     if(!event.currentTarget.getAttribute('href')){event.preventDefault();return;}
     paused=true;$('pause').textContent='Continuar';
@@ -61,6 +79,7 @@
   $('whatsapp').onclick=openAdvertiser;
   $('restart').onclick=()=>location.reload();
   function showOffers(){
+    step('offers');
     $('profileScreen').hidden=true;$('offerScreen').hidden=false;$('offerList').replaceChildren();
     for(const story of new Map(playlist.map(s=>[s.id,s])).values()){
       const card=document.createElement('article'),img=document.createElement('img');img.src=url(story.image_path);img.alt=story.name;card.append(img);
@@ -69,12 +88,14 @@
       }
       $('offerList').append(card);
     }
-    message('Escolha uma oferta. Primeiro conectaremos seu aparelho, depois abriremos o destino.');
+    message(portalConfig.mode==='ads_phone'?'':'Escolha uma oferta. Primeiro conectaremos seu aparelho, depois abriremos o destino.');
   }
   $('skipOffers').onclick=()=>connectAccess();
   async function connectAccess(destination='',campaignId=null){
     if(connecting||!profileSaved)return;connecting=true;$('connect').disabled=true;$('connect').textContent='Solicitando acesso…';
     $('offerScreen').querySelectorAll('button').forEach(b=>b.disabled=true);
+    const previousScreen=$('offerScreen').hidden?'profile':'offers';
+    $('profileScreen').hidden=true;$('offerScreen').hidden=true;$('connectingScreen').hidden=false;step('connecting');
     try{
       for(let attempt=0;attempt<8;attempt++){
         try{await post('/api/ads/access',{token});break;}
@@ -85,7 +106,7 @@
       while(Date.now()<confirmationDeadline){
         let state;try{state=await post('/api/ads/status',{token},3000);}catch(error){if(error.status&&error.status<500&&error.status!==429)throw error;message('Concluindo a conexão. A confirmação será consultada novamente…');await sleep(1000);continue;}
         if(state.status==='applied'){
-          $('profileScreen').hidden=true;$('offerScreen').hidden=true;$('successScreen').hidden=false;message('Internet liberada.');
+          $('profileScreen').hidden=true;$('offerScreen').hidden=true;$('connectingScreen').hidden=true;$('successScreen').hidden=false;step('success');message('Internet liberada.');
           const dest=destination||params.get('linkOrig');$('continue').href=dest&&url(dest)?url(dest):'http://neverssl.com/';
           if(campaignId)fetch(`/api/ad-campaigns/${campaignId}/click`,{method:'POST',keepalive:true}).catch(()=>{});
           for(const story of [...new Map(playlist.filter(s=>interests.has(s.id)&&url(s.target_url)).map(s=>[s.id,s])).values()]){const a=document.createElement('a');a.textContent='Conhecer '+story.name;a.href=url(story.target_url);a.target='_blank';a.rel='noopener noreferrer';a.onclick=()=>fetch(`/api/ad-campaigns/${story.id}/click`,{method:'POST',keepalive:true}).catch(()=>{});$('offers').append(a);}
@@ -97,7 +118,7 @@
         await sleep(1000);
       }
       throw new Error('A confirmação ainda não chegou. Tente liberar novamente.');
-    }catch(error){message(error.name==='AbortError'?'A conexão demorou. Tente novamente.':error.message,true);$('connect').disabled=false;$('connect').textContent='Tentar liberar novamente';}
+    }catch(error){$('connectingScreen').hidden=true;$(previousScreen==='offers'?'offerScreen':'profileScreen').hidden=false;step(previousScreen);message(error.name==='AbortError'?'A conexão demorou. Tente novamente.':error.message,true);$('connect').disabled=false;$('connect').textContent='Tentar liberar novamente';}
     finally{connecting=false;$('offerScreen').querySelectorAll('button').forEach(b=>b.disabled=false);}
   }
   $('profileForm').addEventListener('submit',async event=>{
