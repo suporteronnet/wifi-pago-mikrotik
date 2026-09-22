@@ -17,7 +17,8 @@ test('campaign albums, settings, server-side viewing gate and contacts',async t=
     INSERT INTO routers VALUES(1,1,'router','active');`);
   const app=express();app.use(express.json());
   const adminAuth=(req,res,next)=>req.headers['x-test-admin']==='yes'?next():res.status(401).json({ok:false});
-  const service=register({app,db,adminAuth,requireRole:()=>((req,res,next)=>next()),normalizeMac:v=>/^([a-f0-9]{2}:){5}[a-f0-9]{2}$/i.test(v||'')?v:'',adRouterHasClient:()=>true});
+  // A delayed presence report must not delay Story delivery; access stays gated separately.
+  const service=register({app,db,adminAuth,requireRole:()=>((req,res,next)=>next()),normalizeMac:v=>/^([a-f0-9]{2}:){5}[a-f0-9]{2}$/i.test(v||'')?v:'',adRouterHasClient:()=>false});
   app.post('/api/ads/session',service.start);
   const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
   t.after(()=>{server.closeAllConnections();server.close();db.close();});

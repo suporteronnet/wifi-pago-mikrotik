@@ -8,7 +8,7 @@
   const url=value=>{if(!value)return '';try{const u=new URL(value,location.origin);return ['http:','https:'].includes(u.protocol)?u.href:'';}catch{return '';}};
   async function post(path,body,timeout=8000){
     const controller=new AbortController(),handle=setTimeout(()=>controller.abort(),timeout);
-    try{const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller.signal,cache:'no-store'});const data=await response.json();if(!response.ok||!data.ok){const error=new Error(data.error||'Não foi possível continuar.');error.status=response.status;throw error;}return data;}finally{clearTimeout(handle);}
+    try{const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller.signal,cache:'no-store'});const data=await response.json();if(!response.ok||!data.ok){const error=new Error(data.error||'Não foi possível continuar.');error.status=response.status;error.code=data.code;throw error;}return data;}finally{clearTimeout(handle);}
   }
   function configure(config){
     document.documentElement.style.setProperty('--accent',config.color);
@@ -17,6 +17,7 @@
   }
   async function showStory(){
     clearInterval(timer);ready=false;elapsed=0;paused=false;$('pause').textContent='Pausar';
+    $('storyImage').hidden=true;$('storyLoading').hidden=false;
     const story=playlist[index];$('storyCount').textContent=`${index+1} DE ${playlist.length}`;
     $('nextStory').disabled=true;$('nextStory').textContent='Carregando imagem…';$('interest').hidden=true;
     $('interest').textContent=story.button_label||'Me interessa';
@@ -26,6 +27,9 @@
     if(whatsapp)$('whatsapp').href=whatsapp;else $('whatsapp').removeAttribute('href');
     $('progress').replaceChildren(...playlist.map((_,i)=>{const bar=document.createElement('span'),fill=document.createElement('i');fill.style.width=i<index?'100%':'0';bar.append(fill);return bar;}));
     await new Promise((resolve,reject)=>{const img=$('storyImage'),handle=setTimeout(()=>reject(new Error('A imagem não carregou. Tente reabrir o portal.')),12000);img.onload=()=>{clearTimeout(handle);resolve();};img.onerror=()=>{clearTimeout(handle);reject(new Error('Imagem indisponível. Avise o responsável pelo Wi-Fi.'));};img.src=url(story.image_path);});
+    $('storyImage').hidden=false;$('storyLoading').hidden=true;
+    // Antecipar somente a próxima imagem evita baixar a campanha inteira no celular.
+    if(playlist[index+1]){const preload=new Image();preload.src=url(playlist[index+1].image_path);}
     ready=true;message('');let last=performance.now();
     timer=setInterval(()=>{const now=performance.now(),delta=Math.min(250,now-last);last=now;if(paused||document.hidden||!ready)return;elapsed+=delta;$('interest').hidden=!url(story.target_url)||elapsed<story.duration*500;$('progress').children[index].firstChild.style.width=Math.min(100,elapsed/(story.duration*10))+'%';const remaining=Math.max(0,Math.ceil(story.duration-elapsed/1000));$('nextStory').textContent=remaining?`${remaining}s`:(index===playlist.length-1?'Continuar para cadastro':'Próximo anúncio');if(!remaining){$('nextStory').disabled=false;clearInterval(timer);advance();}},100);
   }
@@ -52,13 +56,21 @@
     try{
       const form=event.currentTarget,body={token};for(const key of ['name','phone','email','city','survey'])body[key]=form.elements[key].value;
       body.terms_accepted=form.elements.terms_accepted.checked;body.marketing_consent=form.elements.marketing_consent.checked;
-      await post('/api/ads/profile',body);await post('/api/ads/access',{token});message('Aguardando a MikroTik confirmar seu acesso…');
-      for(let attempt=0;attempt<90;attempt++){
-        let state;try{state=await post('/api/ads/status',{token},6000);}catch(error){if(error.status&&error.status<500&&error.status!==429)throw error;message('A conexão mudou. Verificando novamente…');await sleep(1000);continue;}
+      await post('/api/ads/profile',body);
+      for(let attempt=0;attempt<8;attempt++){
+        try{await post('/api/ads/access',{token});break;}
+        catch(error){if(error.code!=='DEVICE_NOT_SEEN'||attempt===7)throw error;message('Identificando seu aparelho para conectar…');await sleep(3000);}
+      }
+      message('Conectando seu aparelho…');
+      const confirmationDeadline=Date.now()+90000;
+      while(Date.now()<confirmationDeadline){
+        let state;try{state=await post('/api/ads/status',{token},3000);}catch(error){if(error.status&&error.status<500&&error.status!==429)throw error;message('Concluindo a conexão. A confirmação será consultada novamente…');await sleep(1000);continue;}
         if(state.status==='applied'){
           $('profileScreen').hidden=true;$('successScreen').hidden=false;message('Internet liberada.');
           const dest=params.get('linkOrig');$('continue').href=dest&&url(dest)?url(dest):'http://neverssl.com/';
           for(const story of [...new Map(playlist.filter(s=>interests.has(s.id)&&url(s.target_url)).map(s=>[s.id,s])).values()]){const a=document.createElement('a');a.textContent='Conhecer '+story.name;a.href=url(story.target_url);a.target='_blank';a.rel='noopener noreferrer';a.onclick=()=>fetch(`/api/ad-campaigns/${story.id}/click`,{method:'POST',keepalive:true}).catch(()=>{});$('offers').append(a);}
+          message('Internet liberada. Abrindo a navegação…');
+          setTimeout(()=>location.replace($('continue').href),800);
           return;
         }
         if(state.status==='expired')throw new Error('O tempo de acesso terminou. Reabra o portal para ver novos anúncios.');

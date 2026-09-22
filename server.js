@@ -18531,7 +18531,7 @@ app.post("/api/ads/access", createRateLimiter({
     if(!activeAdCampaign(session.event_id,session.campaign_id))
       return res.status(409).json({ok:false,error:"O anúncio não está mais ativo"});
     if(!session.command_ref && !adRouterHasClient(session.router_id,session.mac))
-      return res.status(409).json({ok:false,error:"Aguardando a MikroTik identificar este aparelho. Tente novamente em alguns segundos."});
+      return res.status(409).json({ok:false,code:"DEVICE_NOT_SEEN",error:"Aguardando a MikroTik identificar este aparelho. Tente novamente em alguns segundos."});
 
     const result=db.transaction(()=>{
       const latest=db.prepare("SELECT command_ref FROM ad_view_sessions WHERE token_hash=?").get(hash);
