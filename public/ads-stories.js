@@ -28,7 +28,20 @@
     $('portalTitle').textContent=config.title;$('termsText').textContent=config.terms;$('marketingText').textContent=config.marketing_label;$('surveyQuestion').textContent=config.survey_question;
     const fields=config.mode==='ads_phone'?[{id:'phone',label:'WhatsApp com DDD',type:'tel',enabled:true,required:true}]:config.fields;
     const container=document.querySelector('.signup-fields');container.replaceChildren();
-    for(const field of fields||[]){if(!field.enabled)continue;const label=document.createElement('label'),input=document.createElement(field.type==='textarea'?'textarea':'input');label.textContent=field.label;input.name=field.id;input.dataset.profileField='true';if(field.type!=='textarea')input.type=field.type;else input.rows=2;input.required=field.required;input.maxLength=field.type==='textarea'?1000:254;label.append(input);container.append(label);}
+    for(const field of fields||[]){
+      if(!field.enabled)continue;
+      const label=document.createElement('label'),input=document.createElement(field.type==='satisfaction'?'select':field.type==='textarea'?'textarea':'input');
+      label.textContent=field.label;input.name=field.id;input.dataset.profileField='true';input.required=field.required;
+      if(field.type==='satisfaction'){
+        for(const value of ['', 'Muito insatisfeito','Insatisfeito','Neutro','Satisfeito','Muito satisfeito']){
+          const option=document.createElement('option');option.value=value;option.textContent=value||'Selecione sua satisfação';input.append(option);
+        }
+      }else{
+        if(field.type==='textarea')input.rows=2;else input.type=field.type;
+        input.maxLength=field.type==='textarea'?1000:254;
+      }
+      label.append(input);container.append(label);
+    }
     document.querySelector('.signup-steps').hidden=true;
     document.querySelector('.signup-intro .eyebrow').textContent=config.mode==='ads_phone'?'SEU WHATSAPP':'SUA OPINIÃO';
     document.querySelector('.signup-intro h2').textContent=config.mode==='ads_phone'?'Informe seu WhatsApp para continuar':'Responda para conectar';
@@ -46,6 +59,7 @@
     $('pause').setAttribute('aria-pressed','false');
     clearInterval(timer);ready=false;elapsed=0;paused=false;$('pause').textContent='Pausar';
     $('storyImage').hidden=true;$('storyLoading').hidden=false;
+    $('storyOverlay').hidden=true;
     const story=playlist[index];$('storyCount').textContent=`${index+1} DE ${playlist.length}`;
     $('nextStory').disabled=true;$('nextStory').textContent='Carregando imagem…';$('interest').hidden=true;
     $('interest').textContent=story.button_label||'Me interessa';
@@ -56,6 +70,9 @@
     $('progress').replaceChildren(...playlist.map((_,i)=>{const bar=document.createElement('span'),fill=document.createElement('i');fill.style.width=i<index?'100%':'0';bar.append(fill);return bar;}));
     await new Promise((resolve,reject)=>{const img=$('storyImage'),handle=setTimeout(()=>reject(new Error('A imagem não carregou. Tente reabrir o portal.')),12000);img.onload=()=>{clearTimeout(handle);resolve();};img.onerror=()=>{clearTimeout(handle);reject(new Error('Imagem indisponível. Avise o responsável pelo Wi-Fi.'));};img.src=url(story.image_path);});
     $('storyImage').hidden=false;$('storyLoading').hidden=true;
+    $('storyOverlay').textContent=story.overlay_text||'';
+    $('storyOverlay').hidden=!story.overlay_text;
+    $('storyScreen').classList.toggle('has-overlay',Boolean(story.overlay_text));
     // Antecipar somente a próxima imagem evita baixar a campanha inteira no celular.
     if(playlist[index+1]){const preload=new Image();preload.src=url(playlist[index+1].image_path);}
     ready=true;message('');let last=performance.now();

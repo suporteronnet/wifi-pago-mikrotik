@@ -45,7 +45,7 @@ test('campaign albums, settings, server-side viewing gate and contacts',async t=
   t.after(()=>{server.closeAllConnections();server.close();db.close();});
   const base=`http://127.0.0.1:${server.address().port}`;
   async function request(path,method='GET',body,admin=true){const r=await fetch(base+path,{method,headers:{'Content-Type':'application/json',...(admin?{'x-test-admin':'yes'}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,data:await r.json()};}
-  const campaign={event_id:1,name:'Album',target_url:'https://example.com',position:2,active:true,slides:[{image_path:'/api/ad-images/first.jpg',duration:3},{image_path:'/api/ad-images/second.png',duration:5}]};
+  const campaign={event_id:1,name:'Album',target_url:'https://example.com',position:2,active:true,slides:[{image_path:'/api/ad-images/first.jpg',duration:3,overlay_text:'Conheca nossas ofertas!'},{image_path:'/api/ad-images/second.png',duration:5}]};
   let r=await request('/admin/api/ad-story-campaigns','POST',campaign);assert.equal(r.status,201);const id=r.data.id;
   r=await request('/admin/api/ad-portals/1');assert.equal(r.data.campaigns[0].slides.length,2);
   assert.equal(r.data.campaigns[0].button_label,'Me interessa');
@@ -70,6 +70,9 @@ test('campaign albums, settings, server-side viewing gate and contacts',async t=
   assert.equal((await request('/admin/api/ad-portals/1')).data.settings.title,'Welcome');
   const start=await request('/api/ads/session','POST',{event_key:'ads',router_key:'router',mac:'02:00:00:00:00:01'},false);
   assert.equal(start.status,200);assert.equal(start.data.playlist.length,2);assert.equal(start.data.playlist[1].image_path,campaign.slides[1].image_path);
+  assert.equal(start.data.playlist[0].overlay_text,campaign.slides[0].overlay_text);
+  assert.equal(start.data.playlist[1].overlay_text,'');
+  assert.equal((await request('/admin/api/ad-story-campaigns/'+id,'PUT',{...campaign,slides:[{...campaign.slides[0],overlay_text:'x'.repeat(301)}]})).status,400);
   assert.equal(start.data.playlist[0].button_label,buttons.button_label);
   assert.equal(start.data.playlist[0].target_url,campaign.target_url);
   const wa=new URL(start.data.playlist[0].whatsapp_url);
@@ -116,6 +119,21 @@ test('campaign albums, settings, server-side viewing gate and contacts',async t=
   assert.equal((await request('/api/ads/profile','POST',leadBody,false)).status,200);
   const leadContact=(await request('/admin/api/ad-contacts?event_id=3')).data.contacts[0];
   assert.equal(leadContact.phone,'');assert.deepEqual(leadContact.answers,[{id:'opinion',label:'Sua opinião',value:'Gostei'}]);
+  // Satisfaction persists as a labelled answer and only accepts defined choices.
+  const satisfaction={id:'rating',label:'Como você avalia nosso atendimento?',type:'satisfaction',enabled:true,required:true};
+  assert.equal((await request('/admin/api/ad-portals/3','PUT',{...leadConfig,fields:[satisfaction]})).status,200);
+  assert.equal((await request('/admin/api/ad-portals/3')).data.settings.fields[0].type,'satisfaction');
+  const ratingRun=await request('/api/ads/session','POST',{event_key:'other',router_key:'lead-router',mac:'02:00:00:00:00:05'},false);
+  const ratingBody={token:ratingRun.data.token,terms_accepted:true,answers:{rating:''}};
+  assert.equal((await request('/api/ads/profile','POST',ratingBody,false)).status,400);
+  ratingBody.answers.rating='Qualquer texto';
+  assert.equal((await request('/api/ads/profile','POST',ratingBody,false)).status,400);
+  for(const value of ['Muito insatisfeito','Insatisfeito','Neutro','Satisfeito','Muito satisfeito']){
+    ratingBody.answers.rating=value;
+    assert.equal((await request('/api/ads/profile','POST',ratingBody,false)).status,200);
+  }
+  const ratingContact=(await request('/admin/api/ad-contacts?event_id=3')).data.contacts.find(c=>c.answers.some(a=>a.id==='rating'));
+  assert.deepEqual(ratingContact.answers,[{id:'rating',label:satisfaction.label,value:'Muito satisfeito'}]);
   // Phone-only still requires completed Stories but does not require the old name field.
   assert.equal((await request('/admin/api/ad-portals/1','PUT',{...config,mode:'ads_phone'})).status,200);
   const phoneRun=await request('/api/ads/session','POST',{event_key:'ads',router_key:'router',mac:'02:00:00:00:00:04'},false);
