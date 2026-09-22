@@ -26,6 +26,17 @@ test('campaign albums, settings, server-side viewing gate and contacts',async t=
   const campaign={event_id:1,name:'Album',target_url:'https://example.com',position:2,active:true,slides:[{image_path:'/api/ad-images/first.jpg',duration:3},{image_path:'/api/ad-images/second.png',duration:5}]};
   let r=await request('/admin/api/ad-story-campaigns','POST',campaign);assert.equal(r.status,201);const id=r.data.id;
   r=await request('/admin/api/ad-portals/1');assert.equal(r.data.campaigns[0].slides.length,2);
+  assert.equal(r.data.campaigns[0].button_label,'Me interessa');
+  assert.equal(r.data.campaigns[0].whatsapp_enabled,0);
+  const buttons={button_label:'Visitar site',whatsapp_enabled:true,whatsapp_phone:'+55 (69) 99999-1234',whatsapp_message:'Olá! Vi o anúncio & quero saber mais.'};
+  assert.equal((await request('/admin/api/ad-story-campaigns/'+id,'PUT',{...campaign,...buttons})).status,200);
+  const configured=(await request('/admin/api/ad-portals/1')).data.campaigns[0];
+  assert.equal(configured.button_label,buttons.button_label);
+  assert.equal(configured.whatsapp_phone,'5569999991234');
+  assert.equal(configured.whatsapp_message,buttons.whatsapp_message);
+  assert.equal((await request('/admin/api/ad-story-campaigns/'+id,'PUT',{...campaign,...buttons,whatsapp_phone:''})).status,400);
+  assert.equal((await request('/admin/api/ad-story-campaigns/'+id,'PUT',{...campaign,...buttons,whatsapp_phone:'javascript:1'})).status,400);
+  assert.equal((await request('/admin/api/ad-story-campaigns/'+id,'PUT',{...campaign,...buttons,button_label:'x'.repeat(33)})).status,400);
   assert.equal((await request('/admin/api/ad-portals/1','GET',undefined,false)).status,401);
   assert.equal((await request('/admin/api/ad-story-campaigns','POST',{...campaign,event_id:2})).status,400);
   assert.equal((await request('/admin/api/ad-story-campaigns','POST',{...campaign,slides:[]})).status,400);
@@ -36,6 +47,11 @@ test('campaign albums, settings, server-side viewing gate and contacts',async t=
   assert.equal((await request('/admin/api/ad-portals/1')).data.settings.title,'Welcome');
   const start=await request('/api/ads/session','POST',{event_key:'ads',router_key:'router',mac:'02:00:00:00:00:01'},false);
   assert.equal(start.status,200);assert.equal(start.data.playlist.length,2);assert.equal(start.data.playlist[1].image_path,campaign.slides[1].image_path);
+  assert.equal(start.data.playlist[0].button_label,buttons.button_label);
+  assert.equal(start.data.playlist[0].target_url,campaign.target_url);
+  const wa=new URL(start.data.playlist[0].whatsapp_url);
+  assert.equal(wa.hostname,'wa.me');assert.equal(wa.pathname,'/5569999991234');
+  assert.equal(wa.searchParams.get('text'),buttons.whatsapp_message);
   const token=start.data.token,hash=crypto.createHash('sha256').update(token).digest('hex');
   const row=()=>db.prepare('SELECT * FROM ad_view_sessions WHERE token_hash=?').get(hash);
   assert.match(service.validateAccess(row()),/Stories/);
@@ -60,6 +76,8 @@ test('campaign albums, settings, server-side viewing gate and contacts',async t=
   assert.equal((await request('/admin/api/ad-contacts?event_id=1','GET',undefined,false)).status,401);
   // Editing/reordering an album is atomic and applies to subsequent visits.
   assert.equal((await request('/admin/api/ad-story-campaigns/'+id,'PUT',{...campaign,slides:[campaign.slides[1],campaign.slides[0]]})).status,200);
+  const disabled=await request('/api/ads/session','POST',{event_key:'ads',router_key:'router',mac:'02:00:00:00:00:02'},false);
+  assert.equal(disabled.data.playlist[0].whatsapp_url,null);
   r=await request('/admin/api/ad-portals/1');assert.equal(r.data.campaigns[0].slides[0].image_path,campaign.slides[1].image_path);
   assert.equal((await request('/admin/api/ad-story-campaigns/'+id,'PUT',{...campaign,slides:[{image_path:'/invalid',duration:0}]})).status,400);
   assert.equal((await request('/admin/api/ad-portals/1')).data.campaigns[0].slides.length,2);

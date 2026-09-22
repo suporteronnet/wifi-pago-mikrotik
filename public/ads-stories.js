@@ -19,7 +19,11 @@
     clearInterval(timer);ready=false;elapsed=0;paused=false;$('pause').textContent='Pausar';
     const story=playlist[index];$('storyCount').textContent=`${index+1} DE ${playlist.length}`;
     $('nextStory').disabled=true;$('nextStory').textContent='Carregando imagem…';$('interest').hidden=true;
-    $('interest').textContent=interests.has(story.id)?'Interesse salvo ✓':'Me interessa';
+    $('interest').textContent=story.button_label||'Me interessa';
+    const target=url(story.target_url);if(target)$('interest').href=target;else $('interest').removeAttribute('href');
+    const whatsapp=url(story.whatsapp_url);
+    $('whatsapp').hidden=!whatsapp;
+    if(whatsapp)$('whatsapp').href=whatsapp;else $('whatsapp').removeAttribute('href');
     $('progress').replaceChildren(...playlist.map((_,i)=>{const bar=document.createElement('span'),fill=document.createElement('i');fill.style.width=i<index?'100%':'0';bar.append(fill);return bar;}));
     await new Promise((resolve,reject)=>{const img=$('storyImage'),handle=setTimeout(()=>reject(new Error('A imagem não carregou. Tente reabrir o portal.')),12000);img.onload=()=>{clearTimeout(handle);resolve();};img.onerror=()=>{clearTimeout(handle);reject(new Error('Imagem indisponível. Avise o responsável pelo Wi-Fi.'));};img.src=url(story.image_path);});
     ready=true;message('');let last=performance.now();
@@ -33,7 +37,15 @@
     finally{advancing=false;}
   }
   $('pause').onclick=()=>{paused=!paused;$('pause').textContent=paused?'Continuar':'Pausar';};$('nextStory').onclick=advance;
-  $('interest').onclick=()=>{interests.add(playlist[index].id);$('interest').textContent='Interesse salvo ✓';message('O link estará disponível depois que seu acesso for liberado.');};
+  function openAdvertiser(event){
+    if(!event.currentTarget.getAttribute('href')){event.preventDefault();return;}
+    paused=true;$('pause').textContent='Continuar';
+    interests.add(playlist[index].id);
+    fetch(`/api/ad-campaigns/${playlist[index].id}/click`,{method:'POST',keepalive:true}).catch(()=>{});
+    message('Story pausado. Ao voltar, toque em Continuar.');
+  }
+  $('interest').onclick=openAdvertiser;
+  $('whatsapp').onclick=openAdvertiser;
   $('restart').onclick=()=>location.reload();
   $('profileForm').addEventListener('submit',async event=>{
     event.preventDefault();if(connecting)return;connecting=true;$('connect').disabled=true;$('connect').textContent='Solicitando acesso…';

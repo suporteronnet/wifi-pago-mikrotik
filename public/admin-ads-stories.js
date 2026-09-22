@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const host=document.getElementById('banners');if(!host)return;
-  const stylesheet=document.createElement('link');stylesheet.rel='stylesheet';stylesheet.href='/admin-ads-stories.css?v=20260922-panels2';document.head.append(stylesheet);
+  const stylesheet=document.createElement('link');stylesheet.rel='stylesheet';stylesheet.href='/admin-ads-stories.css?v=20260922-contacts';document.head.append(stylesheet);
   const section=document.createElement('section');section.className='portal-config-console';
   section.innerHTML=`<header class="portal-config-heading"><div><span>HOTSPOT ANÚNCIOS</span><h2>Seu portal, do seu jeito</h2><p>Configure o cadastro, monte os Stories e acompanhe os visitantes.</p></div></header>
     <div class="portal-config-event"><label>Evento de anúncios<select id="adPortalEvent"><option value="">Selecione um evento</option></select></label><button type="button" id="adRefreshEvents">Atualizar eventos</button></div>
@@ -22,6 +22,10 @@
       <section data-pane="campaigns" hidden><div class="portal-config-box"><div class="portal-config-row"><div><h3>Campanhas e imagens</h3><p>Cada campanha pode ter até 20 imagens. A ordem das campanhas e das imagens define a sequência dos Stories.</p></div><button id="adNewCampaign" type="button" class="primary">+ Nova campanha</button></div><div id="adCampaignList"></div></div>
         <section id="adCampaignEditor" class="portal-config-box" hidden><h3 id="adCampaignEditorTitle">Nova campanha</h3><form id="adCampaignForm"><div class="portal-config-grid">
           <label>Nome da campanha<input name="name" maxlength="100" required></label><label>Link do anunciante (opcional)<input name="target_url" type="url" placeholder="https://..."></label>
+          <label>Texto do botão do anunciante<input name="button_label" maxlength="32" value="Me interessa" required></label>
+          <label>Botão flutuante do WhatsApp<select name="whatsapp_enabled"><option value="false">Desativado</option><option value="true">Ativado</option></select></label>
+          <label>Número do WhatsApp (país + DDD)<input name="whatsapp_phone" type="tel" maxlength="25" placeholder="55 69 99999-9999"></label>
+          <label>Mensagem ao abrir o WhatsApp<textarea name="whatsapp_message" maxlength="1000" rows="2" placeholder="Olá! Vi seu anúncio no WI-FI TOTAL."></textarea></label>
           <label>Ordem da campanha<input name="position" type="number" min="0" max="999" value="0" required></label><label>Situação<select name="active"><option value="true">Ativa</option><option value="false">Inativa</option></select></label>
           <label>Início (opcional)<input name="starts_at" type="datetime-local"></label><label>Fim (opcional)<input name="ends_at" type="datetime-local"></label>
         </div><div class="portal-config-upload"><label>Selecionar imagens — pode escolher várias de uma vez<input id="adCampaignFiles" type="file" accept="image/jpeg,image/png,image/webp" multiple></label><p>JPG, PNG ou WebP, até 900 KB por imagem. Para Stories, prefira imagens verticais. As imagens existentes continuam disponíveis para edição.</p></div>
@@ -33,6 +37,24 @@
   host.replaceChildren(section);
   const $=id=>document.getElementById(id),escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let eventId=0,page=1,campaigns=[],editingId=null,slides=[],saving=false,dirty=false;
+  let contactRows=[];
+  const contactDialog=document.createElement('dialog');
+  contactDialog.className='portal-contact-dialog';contactDialog.setAttribute('aria-labelledby','portalContactTitle');
+  document.body.append(contactDialog);
+  contactDialog.addEventListener('click',event=>{if(event.target===contactDialog||event.target.closest('[data-close-contact]'))contactDialog.close();});
+  function whatsappLink(phone){
+    let digits=String(phone||'').replace(/\D/g,'');
+    if(digits.length===10||digits.length===11)digits='55'+digits;
+    return /^[1-9][0-9]{11,14}$/.test(digits)?'https://wa.me/'+digits:null;
+  }
+  function accessLabel(status){return ({applied:'Liberação confirmada',pending:'Aguardando MikroTik',expired:'Acesso encerrado',failed:'Falha na liberação',cancelled:'Cancelado'})[status]||'Cadastro recebido';}
+  function showContact(id){
+    const c=contactRows.find(row=>Number(row.id)===id);if(!c)return;
+    const link=whatsappLink(c.phone);
+    const field=(label,value)=>`<div class="portal-contact-field"><span>${label}</span><strong>${escape(value||'Não informado')}</strong></div>`;
+    contactDialog.innerHTML=`<header><h2 id="portalContactTitle">Dados do visitante</h2><button type="button" data-close-contact aria-label="Fechar dados do visitante">×</button></header><div class="portal-contact-body"><div class="portal-contact-grid">${field('Nome',c.name)}<div class="portal-contact-field"><span>Telefone / WhatsApp</span><strong>${escape(c.phone)}</strong>${link?`<a class="portal-contact-whatsapp" href="${link}" target="_blank" rel="noopener noreferrer">Abrir WhatsApp ↗</a>`:'<small>Número incompleto. Não foi possível montar o link do WhatsApp.</small>'}</div>${field('E-mail',c.email)}${field('Cidade',c.city)}${field('Cadastro recebido',new Date(c.created_at).toLocaleString('pt-BR'))}${field('Situação da liberação',accessLabel(c.access_status))}</div><h3>Cadastro no Hotspot Anúncios</h3><div class="portal-contact-field">${field('Evento',$('adPortalEvent').selectedOptions[0]?.textContent)}${field('Resposta à pesquisa',c.survey_answer)}${field('Autorização para receber ofertas',c.marketing_consent?'Autorizou':'Não autorizou')}</div></div>`;
+    contactDialog.showModal();
+  }
   const report=(text,error=false,id='adPortalMessage')=>{$(id).textContent=text;$(id).classList.toggle('error',error);};
   async function request(path,options={}){const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),20000);try{const response=await fetch(path,{cache:'no-store',...options,signal:controller.signal});const data=await response.json();if(!response.ok||data.ok===false)throw new Error(data.error||'Não foi possível concluir a operação.');return data;}finally{clearTimeout(timeout);}}
   const json=(method,body)=>({method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -64,6 +86,9 @@
     if(saving)return;if(dirty&&!confirm('Descartar as alterações desta campanha?'))return;discard();
     const form=$('adCampaignForm');form.reset();editingId=campaign?.id||null;
     for(const key of ['name','target_url','position'])form.elements[key].value=campaign?.[key]??(key==='position'?campaigns.length:'');
+    form.elements.button_label.value=campaign?.button_label||'Me interessa';
+    form.elements.whatsapp_enabled.value=String(!!campaign?.whatsapp_enabled);
+    for(const key of ['whatsapp_phone','whatsapp_message'])form.elements[key].value=campaign?.[key]||'';
     form.elements.active.value=String(campaign?!!campaign.active:true);form.elements.starts_at.value=localDate(campaign?.starts_at);form.elements.ends_at.value=localDate(campaign?.ends_at);
     slides=(campaign?.slides||[]).map(s=>({...s}));renderSlides();report('',false,'adCampaignFeedback');$('adCampaignEditorTitle').textContent=campaign?'Editar campanha':'Nova campanha';$('adCampaignEditor').hidden=false;$('adCampaignEditor').scrollIntoView({behavior:'smooth',block:'start'});form.elements.name.focus();
   }
@@ -78,8 +103,9 @@
     }catch(error){report(error.message,true);}
   }
   async function contacts(){const requested=eventId,requestedPage=page;if(!requested)return;try{const data=await request(`/admin/api/ad-contacts?event_id=${requested}&page=${requestedPage}`);if(requested!==eventId||requestedPage!==page)return;
-    const rows=data.contacts.map(c=>`<tr><td>${escape(c.name)}</td><td>${escape(c.phone)}</td><td>${escape(c.email||'—')}</td><td>${escape(c.city||'—')}</td><td>${escape(c.survey_answer||'—')}</td><td>${c.marketing_consent?'Autorizou':'Não autorizou'}</td><td>${c.access_status==='applied'?'Confirmado':c.access_status==='pending'?'Aguardando MikroTik':'Cadastro recebido'}</td><td>${escape(new Date(c.created_at).toLocaleString('pt-BR'))}</td></tr>`).join('');
-    $('adContacts').innerHTML=rows?`<table><thead><tr><th>Nome</th><th>Telefone</th><th>E-mail</th><th>Cidade</th><th>Pesquisa</th><th>Ofertas</th><th>Liberação</th><th>Cadastro</th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="portal-config-empty">Nenhum cadastro recebido neste evento.</p>';
+    contactRows=data.contacts;
+    const rows=data.contacts.map(c=>`<tr><td><strong>${escape(c.name)}</strong><br><small>${escape(c.email||'')}</small></td><td>${escape(c.phone)}</td><td>${escape(accessLabel(c.access_status))}</td><td>${escape(new Date(c.created_at).toLocaleString('pt-BR'))}</td><td><button type="button" data-contact-id="${Number(c.id)}">Ver dados</button></td></tr>`).join('');
+    $('adContacts').innerHTML=rows?`<table><thead><tr><th>Visitante</th><th>Telefone</th><th>Liberação</th><th>Cadastro</th><th>Ações</th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="portal-config-empty">Nenhum cadastro recebido neste evento.</p>';
     $('adContactsPage').textContent=`Página ${page} • ${data.total} cadastros`;$('adContactsPrev').disabled=page<=1;$('adContactsNext').disabled=page*50>=data.total;
   }catch(error){report(error.message,true);}}
   $('adCampaignFiles').onchange=event=>{
@@ -95,16 +121,18 @@
     event.preventDefault();if(saving)return;if(!slides.length){report('Selecione pelo menos uma imagem.',true,'adCampaignFeedback');return;}
     const form=event.currentTarget,body=Object.fromEntries(new FormData(form)),selectedEvent=eventId;
     if(slides.some(s=>!Number.isInteger(s.duration)||s.duration<3||s.duration>30)){report('Use durações de 3 a 30 segundos.',true,'adCampaignFeedback');return;}
-    saving=true;form.querySelectorAll('input,select,button').forEach(x=>x.disabled=true);$('adPortalEvent').disabled=true;$('adNewCampaign').disabled=true;
+    saving=true;form.querySelectorAll('input,select,textarea,button').forEach(x=>x.disabled=true);$('adPortalEvent').disabled=true;$('adNewCampaign').disabled=true;
     try{
       for(let i=0;i<slides.length;i++){const s=slides[i];if(s.file&&!s.image_path){report(`Enviando imagem ${i+1} de ${slides.length}…`,false,'adCampaignFeedback');const data=await request('/admin/api/ad-images',{method:'POST',headers:{'Content-Type':s.file.type},body:s.file});s.image_path=data.image_path;}}
       body.event_id=selectedEvent;body.active=body.active==='true';body.starts_at=body.starts_at?new Date(body.starts_at).toISOString():null;body.ends_at=body.ends_at?new Date(body.ends_at).toISOString():null;body.slides=slides.map(s=>({image_path:s.image_path,duration:s.duration}));
+      body.whatsapp_enabled=body.whatsapp_enabled==='true';
       const saved=await request('/admin/api/ad-story-campaigns'+(editingId?'/'+editingId:''),json(editingId?'PUT':'POST',body));editingId=saved.id||editingId;dirty=false;await refreshCampaigns();discard();report('Campanha e imagens salvas. A nova sequência será usada nas próximas visitas.');
     }catch(error){report(error.message||'Falha ao salvar. Suas imagens continuam selecionadas para tentar novamente.',true,'adCampaignFeedback');}
-    finally{saving=false;form.querySelectorAll('input,select,button').forEach(x=>x.disabled=false);$('adPortalEvent').disabled=false;$('adNewCampaign').disabled=false;renderSlides();}
+    finally{saving=false;form.querySelectorAll('input,select,textarea,button').forEach(x=>x.disabled=false);$('adPortalEvent').disabled=false;$('adNewCampaign').disabled=false;renderSlides();}
   };
   $('adPortalForm').onsubmit=async event=>{event.preventDefault();const button=event.currentTarget.querySelector('button'),body=Object.fromEntries(new FormData(event.currentTarget)),requested=eventId;button.disabled=true;try{await request(`/admin/api/ad-portals/${requested}`,json('PUT',body));if(requested===eventId)report('Configuração salva para as próximas visitas.',false,'adSettingsFeedback');}catch(error){report(error.message,true,'adSettingsFeedback');}finally{button.disabled=false;}};
   $('adCampaignList').onclick=async event=>{const b=event.target.closest('button');if(!b||saving)return;if(b.dataset.edit){edit(campaigns.find(c=>c.id===Number(b.dataset.edit)));return;}if(b.dataset.delete&&confirm('Excluir esta campanha e suas imagens da sequência?')){b.disabled=true;try{await request(`/admin/api/ad-story-campaigns/${b.dataset.delete}`,{method:'DELETE'});if(editingId===Number(b.dataset.delete))discard();await refreshCampaigns();report('Campanha excluída.');}catch(error){report(error.message,true);b.disabled=false;}}};
   section.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>tab(b.dataset.tab));$('adPortalEvent').onchange=load;$('adRefreshEvents').onclick=events;$('adNewCampaign').onclick=()=>edit(null);$('adCancelCampaign').onclick=()=>{if(!dirty||confirm('Descartar alterações da campanha?'))discard();};$('adRefreshContacts').onclick=contacts;$('adContactsPrev').onclick=()=>{page=Math.max(1,page-1);contacts();};$('adContactsNext').onclick=()=>{page++;contacts();};
+  $('adContacts').addEventListener('click',event=>{const button=event.target.closest('[data-contact-id]');if(button)showContact(Number(button.dataset.contactId));});
   events();
 })();
