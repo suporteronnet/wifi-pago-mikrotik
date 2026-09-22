@@ -43,11 +43,9 @@ test('unsafe destinations cannot open or start polling',async()=>{
   assert.equal(result.requests.length,0);
 });
 
-test('captive browser must not request access before browser handoff',async()=>{
-  for(const agent of ['Mozilla/5.0 (Linux; Android 13; Phone; wv) Version/4.0 Chrome/120','Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) AppleWebKit/605 Mobile/15']){
-    const result=await run('https://wa.me/5569999999999',[],agent,true);
-    assert.equal(result.requests.length,0);
-    assert.equal(result.elements.browserHelp.hidden,false);
-    assert.deepEqual(result.redirects,[]);
-  }
+test('legacy mobile handoff requests access instead of blocking on browser instructions',async()=>{
+  const result=await run('https://example.com',['pending','applied'],'Mozilla/5.0 (Linux; Android 13; Phone; wv)',true);
+  assert.equal(result.requests[0].path,'/api/ads/access');
+  assert.equal(result.requests[1].path,'/api/ads/status');
+  assert.deepEqual(result.redirects,['https://example.com/']);
 });

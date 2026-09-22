@@ -116,12 +116,6 @@
   $('skipOffers').onclick=()=>connectAccess();
   async function connectAccess(destination='',campaignId=null){
     if(connecting||!profileSaved)return;connecting=true;$('connect').disabled=true;$('connect').textContent='Solicitando acesso…';
-    if(destination&&/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){
-      const handoff=new URL('/ads-destination.html',location.origin);
-      handoff.hash=new URLSearchParams({token,destination,authorize:'1',logo:portalConfig.logo_path||''}).toString();
-      location.assign(handoff.href);
-      return;
-    }
     $('offerScreen').querySelectorAll('button').forEach(b=>b.disabled=true);
     const previousScreen=$('offerScreen').hidden?'profile':'offers';
     $('profileScreen').hidden=true;$('offerScreen').hidden=true;$('connectingScreen').hidden=false;step('connecting');
