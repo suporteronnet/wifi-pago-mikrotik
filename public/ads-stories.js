@@ -22,6 +22,8 @@
   function configure(config){
     portalConfig=config;
     document.body.dataset.mode=config.mode;
+    document.body.dataset.experience='light';
+    const brand=document.querySelector('.portal-brand img');brand.src='/wifi-total-mark.svg';brand.width=144;brand.height=144;
     document.documentElement.style.setProperty('--accent',config.color);
     $('portalTitle').textContent=config.title;$('termsText').textContent=config.terms;$('marketingText').textContent=config.marketing_label;$('surveyQuestion').textContent=config.survey_question;
     const fields=config.mode==='ads_phone'?[{id:'phone',label:'WhatsApp com DDD',type:'tel',enabled:true,required:true}]:config.fields;
@@ -33,7 +35,6 @@
     document.querySelector('.signup-intro p').textContent=config.mode==='ads_phone'?'Na próxima tela, escolha uma oferta ou continue para navegar.':'Preencha os campos abaixo para liberar seu acesso.';
     $('connect').textContent=config.mode==='lead'?'CONECTAR E NAVEGAR':'VER OFERTAS';
     if(config.mode==='ads_phone'){
-      const brand=document.querySelector('.portal-brand img');brand.src='/wifi-total-mark.svg';brand.width=144;brand.height=144;
       const intro=document.querySelector('.signup-intro');intro.querySelector('h2').textContent='Olá, seja bem-vindo!';intro.querySelector('p').textContent='Por favor, insira seu número de WhatsApp para prosseguir.';
       const input=$('profileForm').elements.phone;input.autocomplete='tel';input.inputMode='tel';input.placeholder='(00) 00000-0000';input.maxLength=25;input.setAttribute('aria-label','WhatsApp com DDD');input.parentElement.classList.add('phone-entry');
       $('connect').textContent='Prosseguir →';$('skipOffers').textContent='Prosseguir →';
@@ -93,6 +94,15 @@
   $('skipOffers').onclick=()=>connectAccess();
   async function connectAccess(destination='',campaignId=null){
     if(connecting||!profileSaved)return;connecting=true;$('connect').disabled=true;$('connect').textContent='Solicitando acesso…';
+    // Reserve the browsing context during the actual tap, before asynchronous
+    // authorization loses user activation. The waiting page independently checks
+    // the ACK if Android closes the captive portal after granting connectivity.
+    let destinationWindow=null;
+    if(destination&&/Android/i.test(navigator.userAgent)){
+      const handoff=new URL('/ads-destination.html',location.origin);
+      handoff.hash=new URLSearchParams({token,destination}).toString();
+      try{destinationWindow=window.open(handoff.href,'_blank');}catch{}
+    }
     $('offerScreen').querySelectorAll('button').forEach(b=>b.disabled=true);
     const previousScreen=$('offerScreen').hidden?'profile':'offers';
     $('profileScreen').hidden=true;$('offerScreen').hidden=true;$('connectingScreen').hidden=false;step('connecting');
@@ -108,17 +118,20 @@
         if(state.status==='applied'){
           $('profileScreen').hidden=true;$('offerScreen').hidden=true;$('connectingScreen').hidden=true;$('successScreen').hidden=false;step('success');message('Internet liberada.');
           const dest=destination||params.get('linkOrig');$('continue').href=dest&&url(dest)?url(dest):'http://neverssl.com/';
+          $('continue').textContent=destination?(/^(wa\.me|api\.whatsapp\.com)$/i.test(new URL(destination).hostname)?'Abrir conversa no WhatsApp':'Abrir site do anunciante'):'Continuar navegando';
           if(campaignId)fetch(`/api/ad-campaigns/${campaignId}/click`,{method:'POST',keepalive:true}).catch(()=>{});
           for(const story of [...new Map(playlist.filter(s=>interests.has(s.id)&&url(s.target_url)).map(s=>[s.id,s])).values()]){const a=document.createElement('a');a.textContent='Conhecer '+story.name;a.href=url(story.target_url);a.target='_blank';a.rel='noopener noreferrer';a.onclick=()=>fetch(`/api/ad-campaigns/${story.id}/click`,{method:'POST',keepalive:true}).catch(()=>{});$('offers').append(a);}
           message('Internet liberada. Abrindo a navegação…');
-          setTimeout(()=>location.replace($('continue').href),800);
+          if(!destinationWindow||destinationWindow.closed)location.replace($('continue').href);
+          else message('Internet liberada. O destino está sendo aberto na outra janela.');
           return;
         }
         if(state.status==='expired')throw new Error('O tempo de acesso terminou. Reabra o portal para ver novos anúncios.');
+        if(state.status==='cancelled')throw new Error('Esta solicitação ficou sem confirmação. Reabra o portal para tentar novamente.');
         await sleep(1000);
       }
       throw new Error('A confirmação ainda não chegou. Tente liberar novamente.');
-    }catch(error){$('connectingScreen').hidden=true;$(previousScreen==='offers'?'offerScreen':'profileScreen').hidden=false;step(previousScreen);message(error.name==='AbortError'?'A conexão demorou. Tente novamente.':error.message,true);$('connect').disabled=false;$('connect').textContent='Tentar liberar novamente';}
+    }catch(error){try{destinationWindow?.close();}catch{}$('connectingScreen').hidden=true;$(previousScreen==='offers'?'offerScreen':'profileScreen').hidden=false;step(previousScreen);message(error.name==='AbortError'?'A conexão demorou. Tente novamente.':error.message,true);$('connect').disabled=false;$('connect').textContent='Tentar liberar novamente';}
     finally{connecting=false;$('offerScreen').querySelectorAll('button').forEach(b=>b.disabled=false);}
   }
   $('profileForm').addEventListener('submit',async event=>{
@@ -132,7 +145,7 @@
     try{
       if(!context.event_key||!context.router_key||!/^([a-f0-9]{2}:){5}[a-f0-9]{2}$/i.test(context.mac))throw new Error('Abra este portal conectando-se ao Wi-Fi do evento.');
       for(let attempt=0;attempt<20;attempt++){
-        try{const result=await post('/api/ads/session',context);token=result.token;playlist=result.playlist;configure(result.settings);if(result.settings.mode==='lead'){$('storyScreen').hidden=true;$('profileScreen').hidden=false;}else await showStory();return;}catch(error){if(error.status!==409||attempt===19)throw error;message(error.message);await sleep(3000);}
+        try{const result=await post('/api/ads/session',context);token=result.token;playlist=result.playlist;configure(result.settings);if(result.settings.mode==='lead'){$('storyScreen').hidden=true;$('profileScreen').hidden=false;step('profile');}else await showStory();return;}catch(error){if(error.status!==409||attempt===19)throw error;message(error.message);await sleep(3000);}
       }
     }catch(error){message(error.name==='AbortError'?'Não foi possível carregar. Reabra o portal.':error.message,true);$('restart').hidden=false;}
   }
