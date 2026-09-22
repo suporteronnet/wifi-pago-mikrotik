@@ -20828,6 +20828,8 @@ function buildMikrotikAdminPullScript(
 
 
   const source = [
+    ':if ([/system script job print count-only where script="WIFI-PAGO-ADMIN-PULL"] > 1) do={ :error "ADMIN-PULL already running" };',
+
 
     ':local baseUrl "https://wifi-total.duckdns.org";',
 
@@ -21250,7 +21252,7 @@ function buildMikrotikAdminPullScript(
 
     "",
 
-    '/system scheduler add name="WIFI-PAGO-ADMIN-PULL" interval=5s start-time=startup on-event="/system script run WIFI-PAGO-ADMIN-PULL" policy=read,write,test',
+    `/system scheduler add name="WIFI-PAGO-ADMIN-PULL" interval=${String(eventData?.portal_mode || eventData?.event?.portal_mode || "pix") === "ads" ? "2s" : "5s"} start-time=startup on-event="/system script run WIFI-PAGO-ADMIN-PULL" policy=read,write,test`,
 
     "",
 
@@ -21937,6 +21939,8 @@ function buildMikrotikHeartbeatScript(
   // ==========================================================
 
   const presenceSource = [
+    ':if ([/system script job print count-only where script="WIFI-PAGO-PRESENCE"] > 1) do={ :error "PRESENCE already running" };',
+
 
     ':local presenceUrl "https://wifi-total.duckdns.org/api/mikrotik/presence";',
     `:local routerKey "${routerKey}";`,
@@ -22008,7 +22012,7 @@ function buildMikrotikHeartbeatScript(
     ...presenceSource,
     '}',
     "",
-    '/system scheduler add name="WIFI-PAGO-PRESENCE" interval=20s start-time=startup on-event="/system script run WIFI-PAGO-PRESENCE" policy=read,write,test',
+    `/system scheduler add name="WIFI-PAGO-PRESENCE" interval=${String(eventData?.portal_mode || eventData?.event?.portal_mode || "pix") === "ads" ? "5s" : "20s"} start-time=startup on-event="/system script run WIFI-PAGO-PRESENCE" policy=read,write,test`,
     "",
     "# TESTE MANUAL:",
     '# /system script run WIFI-PAGO-HEARTBEAT',

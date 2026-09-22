@@ -18541,11 +18541,23 @@ app.post("/api/ads/access", createRateLimiter({
     const result=db.transaction(()=>{
       cancelStaleSponsored(db,session.event_id,session.router_id);
       const latest=db.prepare("SELECT command_ref FROM ad_view_sessions WHERE token_hash=?").get(hash);
-      if(latest.command_ref) return latest.command_ref;
+      if(latest.command_ref){
+        const valid=db.prepare(`SELECT c.command_ref FROM admin_commands c WHERE c.command_ref=?
+          AND c.status IN ('pending','applied')
+          AND (c.status='pending' OR julianday(c.applied_at)+c.minutes/1440.0>julianday('now'))
+          AND NOT EXISTS (SELECT 1 FROM admin_commands ending WHERE ending.event_id=c.event_id
+            AND ending.router_id=c.router_id AND ending.mac=c.mac AND ending.id>c.id
+            AND ending.command_type IN ('UNBYPASS','BLOCK_NOW') AND ending.status IN ('pending','applied'))`).get(latest.command_ref);
+        if(valid)return valid.command_ref;
+      }
       enqueueExpiredAdminTemporaryAccess(session.event_id,session.router_id);
-      const existing=db.prepare(`SELECT command_ref,status,applied_at,minutes FROM admin_commands
-        WHERE event_id=? AND router_id=? AND mac=? AND command_type='SPONSORED'
-          AND status IN ('pending','applied') ORDER BY id DESC LIMIT 1`).get(session.event_id,session.router_id,session.mac);
+      const existing=db.prepare(`SELECT c.command_ref,c.status,c.applied_at,c.minutes FROM admin_commands c
+        WHERE c.event_id=? AND c.router_id=? AND c.mac=? AND c.command_type='SPONSORED'
+          AND c.status IN ('pending','applied')
+          AND NOT EXISTS (SELECT 1 FROM admin_commands ending WHERE ending.event_id=c.event_id
+            AND ending.router_id=c.router_id AND ending.mac=c.mac AND ending.id>c.id
+            AND ending.command_type IN ('UNBYPASS','BLOCK_NOW') AND ending.status IN ('pending','applied'))
+        ORDER BY c.id DESC LIMIT 1`).get(session.event_id,session.router_id,session.mac);
       const active=existing && (existing.status==='pending' ||
         (existing.status==='applied' && Date.parse(existing.applied_at)+Number(existing.minutes)*60000>Date.now()));
       const ref=active ? existing.command_ref : createAdminCommand(
@@ -18573,8 +18585,12 @@ app.post("/api/ads/status", (req,res)=>{
     const session=db.prepare("SELECT command_ref,expires_at FROM ad_view_sessions WHERE token_hash=?").get(hash);
     if(!session || Date.parse(session.expires_at)<=Date.now()) return res.status(410).json({ok:false,error:"Sessão expirada"});
     if(!session.command_ref) return res.json({ok:true,status:"viewing"});
-    const command=db.prepare("SELECT status,applied_at,minutes FROM admin_commands WHERE command_ref=?").get(session.command_ref);
+    const command=db.prepare("SELECT * FROM admin_commands WHERE command_ref=?").get(session.command_ref);
     if(!command) return res.status(404).json({ok:false,error:"Liberação não encontrada"});
+    const ended=db.prepare(`SELECT id FROM admin_commands WHERE event_id=? AND router_id=? AND mac=? AND id>?
+      AND command_type IN ('UNBYPASS','BLOCK_NOW') AND status IN ('pending','applied') LIMIT 1`)
+      .get(command.event_id,command.router_id,command.mac,command.id);
+    if(ended)return res.json({ok:true,status:'revoked'});
     const expired=command.status==='applied' && Date.parse(command.applied_at)+Number(command.minutes)*60000<=Date.now();
     return res.json({ok:true,status:expired?'expired':command.status});
   } catch(error) {

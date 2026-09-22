@@ -2,6 +2,9 @@
   'use strict';
   const $=id=>document.getElementById(id),params=new URLSearchParams(location.search);
   const context={event_key:params.get('event_key')||'',router_key:params.get('router_key')||'',mac:params.get('mac')||''};
+  const resumeKey='wifi-ads:'+JSON.stringify(context);
+  function savedSession(){try{return JSON.parse(sessionStorage.getItem(resumeKey)||'{}');}catch{return {};}}
+  function saveSession(values){try{sessionStorage.setItem(resumeKey,JSON.stringify({...savedSession(),...values}));}catch{}}
   let token='',playlist=[],index=0,elapsed=0,paused=false,ready=false,timer=null,advancing=false,connecting=false;
   let portalConfig={},profileSaved=false;
   function step(name){document.body.dataset.step=name;if(name!=='story')window.scrollTo({top:0,behavior:'instant'});}
@@ -92,11 +95,10 @@
   }
   $('pause').onclick=()=>{paused=!paused;renderPause();$('pause').setAttribute('aria-pressed',String(paused));$('pause').setAttribute('aria-label',paused?'Continuar Story':'Pausar Story');};$('nextStory').onclick=advance;
   function openAdvertiser(event){
-    if(!event.currentTarget.getAttribute('href')){event.preventDefault();return;}
-    paused=true;renderPause();
+    event.preventDefault();
+    if(!event.currentTarget.getAttribute('href'))return;
     interests.add(playlist[index].id);
-    fetch(`/api/ad-campaigns/${playlist[index].id}/click`,{method:'POST',keepalive:true}).catch(()=>{});
-    message('Story pausado. Ao voltar, toque em Continuar.');
+    message('Conclua os anúncios e o cadastro. Você poderá abrir esta oferta após conectar.');
   }
   $('interest').onclick=openAdvertiser;
   $('whatsapp').onclick=openAdvertiser;
@@ -116,6 +118,7 @@
   $('skipOffers').onclick=()=>connectAccess();
   async function connectAccess(destination='',campaignId=null){
     if(connecting||!profileSaved)return;connecting=true;$('connect').disabled=true;$('connect').textContent='Solicitando acesso…';
+    saveSession({destination,campaignId});
     $('offerScreen').querySelectorAll('button').forEach(b=>b.disabled=true);
     const previousScreen=$('offerScreen').hidden?'profile':'offers';
     $('profileScreen').hidden=true;$('offerScreen').hidden=true;$('connectingScreen').hidden=false;step('connecting');
@@ -130,7 +133,8 @@
         let state;try{state=await post('/api/ads/status',{token},3000);}catch(error){if(error.status&&error.status<500&&error.status!==429)throw error;message('Concluindo a conexão. A confirmação será consultada novamente…');await sleep(1000);continue;}
         if(state.status==='applied'){
           $('profileScreen').hidden=true;$('offerScreen').hidden=true;$('connectingScreen').hidden=true;$('successScreen').hidden=false;step('success');message('Internet liberada.');
-          const dest=destination||params.get('linkOrig');$('continue').href=dest&&url(dest)?url(dest):'http://neverssl.com/';
+          // link-orig can be the captive login URL itself, causing a new portal run.
+          const dest=destination;$('continue').href=dest&&url(dest)?url(dest):'http://neverssl.com/';
           $('continue').textContent=destination?(/^(wa\.me|api\.whatsapp\.com)$/i.test(new URL(destination).hostname)?'Abrir conversa no WhatsApp':'Abrir site do anunciante'):'Continuar navegando';
           if(campaignId)fetch(`/api/ad-campaigns/${campaignId}/click`,{method:'POST',keepalive:true}).catch(()=>{});
           for(const story of [...new Map(playlist.filter(s=>interests.has(s.id)&&url(s.target_url)).map(s=>[s.id,s])).values()]){const a=document.createElement('a');a.textContent='Conhecer '+story.name;a.href=url(story.target_url);a.target='_blank';a.rel='noopener noreferrer';a.onclick=()=>fetch(`/api/ad-campaigns/${story.id}/click`,{method:'POST',keepalive:true}).catch(()=>{});$('offers').append(a);}
@@ -140,6 +144,7 @@
         }
         if(state.status==='expired')throw new Error('O tempo de acesso terminou. Reabra o portal para ver novos anúncios.');
         if(state.status==='cancelled')throw new Error('Esta solicitação ficou sem confirmação. Reabra o portal para tentar novamente.');
+        if(state.status==='revoked')throw new Error('Este acesso foi encerrado na MikroTik. Solicite uma nova liberação.');
         await sleep(1000);
       }
       throw new Error('A confirmação ainda não chegou. Tente liberar novamente.');
@@ -157,7 +162,19 @@
     try{
       if(!context.event_key||!context.router_key||!/^([a-f0-9]{2}:){5}[a-f0-9]{2}$/i.test(context.mac))throw new Error('Abra este portal conectando-se ao Wi-Fi do evento.');
       for(let attempt=0;attempt<20;attempt++){
-        try{const result=await post('/api/ads/session',context);token=result.token;playlist=result.playlist;configure(result.settings);if(result.settings.mode==='lead'){$('storyScreen').hidden=true;$('profileScreen').hidden=false;step('profile');}else await showStory();return;}catch(error){if(error.status!==409||attempt===19)throw error;message(error.message);await sleep(3000);}
+        try{
+          const saved=savedSession(),result=await post('/api/ads/session',{...context,resume_token:saved.token});
+          token=result.token;playlist=result.playlist;configure(result.settings);index=result.index||0;profileSaved=result.profile_saved===true;
+          saveSession({token,destination:result.token===saved.token?saved.destination:'',campaignId:result.token===saved.token?saved.campaignId:null});
+          if(result.completed||result.settings.mode==='lead'){
+            $('storyScreen').hidden=true;
+            if(profileSaved){
+              if(result.access_requested){$('profileScreen').hidden=false;await connectAccess(url(saved.destination),saved.campaignId);}
+              else if(result.settings.mode==='lead')await connectAccess();else showOffers();
+            }else{$('profileScreen').hidden=false;step('profile');}
+          }else await showStory();
+          return;
+        }catch(error){if(error.status!==409||attempt===19)throw error;message(error.message);await sleep(3000);}
       }
     }catch(error){message(error.name==='AbortError'?'Não foi possível carregar. Reabra o portal.':error.message,true);$('restart').hidden=false;}
   }

@@ -146,6 +146,12 @@ test('campaign albums, settings, server-side viewing gate and contacts',async t=
   assert.equal((await request('/api/ads/profile','POST',phoneBody,false)).status,409);
   db.prepare('UPDATE ad_story_runs SET completed=1 WHERE token_hash=?').run(phoneHash);
   assert.equal((await request('/api/ads/profile','POST',phoneBody,false)).status,200);
+  const resumed=await request('/api/ads/session','POST',{event_key:'ads',router_key:'router',mac:'02:00:00:00:00:04',resume_token:phoneRun.data.token},false);
+  assert.equal(resumed.data.token,phoneRun.data.token);
+  assert.equal(resumed.data.completed,true);
+  assert.equal(resumed.data.profile_saved,true);
+  const different=await request('/api/ads/session','POST',{event_key:'ads',router_key:'router',mac:'02:00:00:00:00:09',resume_token:phoneRun.data.token},false);
+  assert.notEqual(different.data.token,phoneRun.data.token);
   assert.equal((await request('/admin/api/ad-portals/3','PUT',{...leadConfig,fields:[]})).status,400);
   // Legacy single-image campaigns remain visible without destructive migration.
   db.prepare('INSERT INTO ad_campaigns(event_id,name,image_path) VALUES(1,?,?)').run('Legacy','/api/ad-images/legacy.jpg');
