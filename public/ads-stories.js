@@ -21,11 +21,6 @@
     $('pause').setAttribute('aria-label',paused?'Continuar Story':'Pausar Story');
   }
   const interests=new Set(),sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-  $('continueBrowser').onclick=()=>{
-    // A real link preserves the user gesture. Do not grant access or invoke
-    // custom app schemes: the device decides where this HTTP link opens.
-    if(document.body.dataset.step==='story'){paused=true;renderPause();}
-  };
   const message=(text,error=false)=>{$('message').textContent=text;$('message').classList.toggle('error',error);};
   const url=value=>{if(!value)return '';try{const u=new URL(value,location.origin);return ['http:','https:'].includes(u.protocol)?u.href:'';}catch{return '';}};
   async function post(path,body,timeout=8000){
